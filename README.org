@@ -33,6 +33,10 @@ no file-mode adapter.
 incomplete final form. =log-append= repairs such a tail atomically before
 publishing the new form. A malformed complete form signals =store-error=.
 
+Applications that have already verified the tail may pass =:repair-tail-p nil=
+for constant-time appends to a large log. They must request repair again after
+loading the log following an interrupted write.
+
 All reads bind =*read-eval*= to =nil=. Logs are designed for a serialized
 writer and any number of readers. They do not provide cross-process locking.
 

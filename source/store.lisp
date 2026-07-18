@@ -194,20 +194,24 @@ must serialize competing writers when replacing an existing file."
              :require-absent require-absent))
 
 (defun log-append
-    (pathname form &key initial-forms (mode #o600))
+    (pathname form &key initial-forms (mode #o600) (repair-tail-p t))
   "Append one complete FORM to PATHNAME, atomically creating or repairing it.
 
 INITIAL-FORMS precede FORM when the log does not exist. If a crash left an
 incomplete final form, this operation atomically replaces the file with all
-complete preceding forms followed by FORM. Callers must serialize writers."
+complete preceding forms followed by FORM. REPAIR-TAIL-P may be false only when
+the caller has already verified the tail and wants a constant-time append.
+Callers must serialize writers."
   (if (probe-file pathname)
-      (multiple-value-bind (forms incomplete-final-form-p)
-          (log-read pathname)
-        (if incomplete-final-form-p
-            (log-write pathname (append forms (list form)) :mode mode)
-            (store--write-forms pathname (list form)
-                                :append t
-                                :mode mode)))
+      (if repair-tail-p
+          (multiple-value-bind (forms incomplete-final-form-p)
+              (log-read pathname)
+            (if incomplete-final-form-p
+                (log-write pathname (append forms (list form)) :mode mode)
+                (store--write-forms pathname (list form)
+                                    :append t
+                                    :mode mode)))
+          (store--write-forms pathname (list form) :append t :mode mode))
       (log-write pathname
                  (append (copy-list initial-forms) (list form))
                  :mode mode
