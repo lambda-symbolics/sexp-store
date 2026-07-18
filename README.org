@@ -1,0 +1,43 @@
+#+TITLE: sexp-store
+#+STARTUP: content
+
+=sexp-store= persists portable Common Lisp data as readable top-level forms.
+It provides atomic single-form snapshots and crash-tolerant append logs without
+serializing implementation objects or enabling reader evaluation.
+
+* Snapshots
+
+#+BEGIN_SRC lisp
+(sexp-store:snapshot-write #P"state.sexp" '(:state :version 1))
+
+(multiple-value-bind (form sole-form-p)
+    (sexp-store:snapshot-read #P"state.sexp")
+  (values form sole-form-p))
+#+END_SRC
+
+Snapshot publication writes a complete temporary file beside the target and
+renames it over the target. The default Unix mode is =0600= on SBCL. Pass
+=:mode nil= when permissions are managed separately or the implementation has
+no file-mode adapter.
+
+* Append logs
+
+#+BEGIN_SRC lisp
+(sexp-store:log-append
+ #P"events.sexp"
+ '(:event :id 1)
+ :initial-forms '((:events :version 1)))
+#+END_SRC
+
+=log-read= returns the complete forms and a second value indicating an
+incomplete final form. =log-append= repairs such a tail atomically before
+publishing the new form. A malformed complete form signals =store-error=.
+
+All reads bind =*read-eval*= to =nil=. Logs are designed for a serialized
+writer and any number of readers. They do not provide cross-process locking.
+
+* Tests
+
+#+BEGIN_SRC lisp
+(asdf:test-system :sexp-store)
+#+END_SRC
