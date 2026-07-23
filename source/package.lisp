@@ -1,6 +1,7 @@
 (defpackage #:sexp-store
   (:use #:cl)
   (:export #:log-append
+           #:log-map
            #:log-read
            #:log-write
            #:publication-conflict
@@ -15,6 +16,7 @@
   (:use #:cl)
   (:import-from #:sexp-store
                 #:log-append
+                #:log-map
                 #:log-read
                 #:log-write
                 #:publication-conflict

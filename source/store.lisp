@@ -70,40 +70,96 @@ Reader errors are wrapped in STORE-ERROR."
                    (format nil "Could not read a state snapshot: ~A" cause)
                    cause))))
 
+(defun log-map (function pathname &key (start-position 0))
+  "Call FUNCTION for each complete form in PATHNAME from START-POSITION.
+
+Evaluation is disabled while forms are read. Return the position after the last
+complete form, whether reading stopped inside an incomplete final form, and the
+number of forms visited. The returned position may be supplied to a later call
+after forms have only been appended. Callback conditions propagate unchanged.
+A missing file is empty only at position zero."
+  (unless (functionp function)
+    (store--fail ':read pathname "FUNCTION must be a function."))
+  (unless (typep start-position '(integer 0))
+    (store--fail ':read pathname
+                 "START-POSITION must be a nonnegative integer."))
+  (unless (probe-file pathname)
+    (if (zerop start-position)
+        (return-from log-map (values 0 nil 0))
+        (store--fail ':read pathname
+                     "A nonzero log position cannot be read from a missing file.")))
+  (let ((stream
+          (handler-case
+              (open pathname
+                    :direction :input
+                    :external-format :utf-8)
+            (error (cause)
+              (store--fail ':read pathname
+                           (format nil "Could not open a readable log: ~A" cause)
+                           cause)))))
+    (unwind-protect
+         (let ((*read-eval* nil)
+               (end-marker (cons nil nil))
+               (count 0))
+           (handler-case
+               (unless (file-position stream start-position)
+                 (store--fail ':read pathname
+                              "START-POSITION is not valid for this log."))
+             (store-error (condition)
+               (error condition))
+             (error (cause)
+               (store--fail ':read pathname
+                            (format nil "Could not seek in a readable log: ~A"
+                                    cause)
+                            cause)))
+           (loop
+             for form-start =
+               (handler-case
+                   (file-position stream)
+                 (error (cause)
+                   (store--fail
+                    ':read pathname
+                    (format nil "Could not locate a readable log form: ~A"
+                            cause)
+                    cause)))
+             do
+                (handler-case
+                    (let ((form (read stream nil end-marker)))
+                      (when (eq form end-marker)
+                        (return
+                          (values
+                           (or (file-position stream) form-start)
+                           nil
+                           count)))
+                      (funcall function form)
+                      (incf count))
+                  (end-of-file ()
+                    (return (values form-start t count)))
+                  (reader-error (cause)
+                    (store--fail
+                     ':read pathname
+                     (format nil "Malformed readable log data: ~A" cause)
+                     cause))
+                  (stream-error (cause)
+                    (store--fail
+                     ':read pathname
+                     (format nil "Could not read a readable log: ~A" cause)
+                     cause)))))
+      (close stream))))
+
 (defun log-read (pathname)
   "Read every complete top-level form from PATHNAME with evaluation disabled.
 
 The first value is the complete form list. The second is true only when reading
 stopped inside an incomplete final form. A missing file returns two NIL values.
 Malformed complete input signals STORE-ERROR."
-  (if (not (probe-file pathname))
-      (values nil nil)
-      (handler-case
-          (with-open-file (stream pathname
-                                  :direction :input
-                                  :external-format :utf-8)
-            (let ((*read-eval* nil)
-                  (end-marker (cons nil nil))
-                  (forms nil)
-                  (incomplete-final-form-p nil))
-              (handler-case
-                  (loop for form = (read stream nil end-marker)
-                        until (eq form end-marker)
-                        do (push form forms))
-                (end-of-file ()
-                  (setf incomplete-final-form-p t))
-                (reader-error (cause)
-                  (store--fail
-                   ':read pathname
-                   (format nil "Malformed readable log data: ~A" cause)
-                   cause)))
-              (values (nreverse forms) incomplete-final-form-p)))
-        (store-error (condition)
-          (error condition))
-        (error (cause)
-          (store--fail ':read pathname
-                       (format nil "Could not read a readable log: ~A" cause)
-                       cause)))))
+  (let ((forms nil))
+    (multiple-value-bind (position incomplete-final-form-p count)
+        (log-map (lambda (form)
+                   (push form forms))
+                 pathname)
+      (declare (ignore position count))
+      (values (nreverse forms) incomplete-final-form-p))))
 
 
 ;;;; -- Publication --

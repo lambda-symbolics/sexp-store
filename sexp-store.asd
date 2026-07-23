@@ -1,7 +1,7 @@
 (asdf:defsystem #:sexp-store
   :description "Crash-tolerant readable Common Lisp state files"
   :author "Lukáš Hozda"
-  :version "0.1.0"
+  :version "0.2.0"
   :serial t
   :depends-on (#+sbcl #:sb-posix)
   :components ((:module "source"
