@@ -123,28 +123,31 @@ A missing file is empty only at position zero."
                             cause)
                     cause)))
              do
-                (handler-case
-                    (let ((form (read stream nil end-marker)))
-                      (when (eq form end-marker)
-                        (return
-                          (values
-                           (or (file-position stream) form-start)
-                           nil
-                           count)))
-                      (funcall function form)
-                      (incf count))
-                  (end-of-file ()
-                    (return (values form-start t count)))
-                  (reader-error (cause)
-                    (store--fail
-                     ':read pathname
-                     (format nil "Malformed readable log data: ~A" cause)
-                     cause))
-                  (stream-error (cause)
-                    (store--fail
-                     ':read pathname
-                     (format nil "Could not read a readable log: ~A" cause)
-                     cause)))))
+                (let ((form
+                        (handler-case
+                            (read stream nil end-marker)
+                          (end-of-file ()
+                            (return (values form-start t count)))
+                          (reader-error (cause)
+                            (store--fail
+                             ':read pathname
+                             (format nil "Malformed readable log data: ~A"
+                                     cause)
+                             cause))
+                          (stream-error (cause)
+                            (store--fail
+                             ':read pathname
+                             (format nil "Could not read a readable log: ~A"
+                                     cause)
+                             cause)))))
+                  (when (eq form end-marker)
+                    (return
+                      (values
+                       (or (file-position stream) form-start)
+                       nil
+                       count)))
+                  (funcall function form)
+                  (incf count))))
       (close stream))))
 
 (defun log-read (pathname)

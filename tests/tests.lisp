@@ -124,6 +124,24 @@
                   (error "callback failure"))
                 pathname))
      "streaming reads propagate callback conditions unchanged"))
+  (let* ((pathname  (merge-pathnames "callback-end-of-file.sexp" root))
+         (stream    (make-string-input-stream ""))
+         (condition (make-condition 'end-of-file :stream stream)))
+    (unwind-protect
+         (progn
+           (log-append pathname '(:event :id 1))
+           (test-assert
+            (handler-case
+                (progn
+                  (log-map (lambda (form)
+                             (declare (ignore form))
+                             (error condition))
+                           pathname)
+                  nil)
+              (end-of-file (cause)
+                (eq cause condition)))
+            "streaming reads do not mistake callback EOF for an incomplete tail"))
+      (close stream)))
   nil)
 
 (defun run-tests ()
