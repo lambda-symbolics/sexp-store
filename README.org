@@ -49,3 +49,5 @@ writer and any number of readers. They do not provide cross-process locking.
 #+BEGIN_SRC lisp
 (asdf:test-system :sexp-store)
 #+END_SRC
+
+Part of the [[https://www.lambda-symbolics.com/libraries][Lambda Symbolics library shelf]].
