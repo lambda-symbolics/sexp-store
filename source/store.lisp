@@ -170,16 +170,12 @@ Malformed complete input signals STORE-ERROR."
 (defun store--set-mode (pathname mode)
   "Set PATHNAME to integer MODE when one was requested."
   (when mode
-    #+sbcl
     (handler-case
-        (sb-posix:chmod (namestring pathname) mode)
+        (setf (ls-compat.posix:file-mode pathname) mode)
       (error (cause)
         (store--fail ':permissions pathname
                      (format nil "Could not set file mode ~O: ~A" mode cause)
-                     cause)))
-    #-sbcl
-    (store--fail ':permissions pathname
-                 "File modes are not implemented on this Lisp."))
+                     cause))))
   pathname)
 
 (defun store--temporary-pathname (pathname)

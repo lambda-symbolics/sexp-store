@@ -16,9 +16,8 @@ serializing implementation objects or enabling reader evaluation.
 #+END_SRC
 
 Snapshot publication writes a complete temporary file beside the target and
-renames it over the target. The default Unix mode is =0600= on SBCL. Pass
-=:mode nil= when permissions are managed separately or the implementation has
-no file-mode adapter.
+renames it over the target. The default Unix mode is =0600= on supported POSIX
+environments. Pass =:mode nil= when permissions are managed separately.
 
 * Append logs
 

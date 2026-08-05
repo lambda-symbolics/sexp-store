@@ -13,10 +13,8 @@
   nil)
 
 (defun tests--file-mode (pathname)
-  "Return PATHNAME's Unix permission bits on SBCL."
-  #+sbcl (logand #o777 (sb-posix:stat-mode (sb-posix:stat pathname)))
-  #-sbcl (declare (ignore pathname))
-  #-sbcl nil)
+  "Return PATHNAME's Unix permission bits."
+  (logand #o777 (ls-compat.posix:file-mode pathname)))
 
 (defun tests--snapshots (root)
   "Exercise atomic single-form snapshots beneath ROOT."
@@ -27,7 +25,6 @@
       (test-assert (and sole-form-p
                         (equal form '(:state :version 1)))
                    "a snapshot round-trips as one form"))
-    #+sbcl
     (test-assert (= (tests--file-mode pathname) #o600)
                  "snapshot files default to private permissions")
     (tests--write-text pathname "(:extra t)\n" :append t)

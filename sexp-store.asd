@@ -4,7 +4,7 @@
   :license "ISC"
   :version "0.2.0"
   :serial t
-  :depends-on (#+sbcl #:sb-posix)
+  :depends-on (#:ls-compat/posix)
   :components ((:module "source"
                 :serial t
                 :components ((:file "package")
