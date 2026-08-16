@@ -2,8 +2,7 @@
 #+STARTUP: content
 
 =sexp-store= persists portable Common Lisp data as readable top-level forms.
-It provides atomic single-form snapshots and crash-tolerant append logs without
-serializing implementation objects or enabling reader evaluation.
+It provides atomic single-form snapshots and crash-tolerant append logs.
 
 * Snapshots
 
@@ -28,20 +27,19 @@ environments. Pass =:mode nil= when permissions are managed separately.
  :initial-forms '((:events :version 1)))
 #+END_SRC
 
-=log-read= returns the complete forms and a second value indicating an
-incomplete final form. =log-append= repairs such a tail atomically before
-publishing the new form. A malformed complete form signals =store-error=.
+- =log-read= returns the complete forms and a second value for an incomplete
+  final form
+- =log-append= repairs such a tail atomically before publishing the new form
+- A malformed complete form signals =store-error=
+- =log-map= visits one complete form at a time and returns a file position
+  that a later call may use as =:start-position=
 
-For large logs, =log-map= visits one complete form at a time without retaining
-the whole file. It returns a file position that a later call may use as
-=:start-position= after more forms have been appended.
+Applications that have already verified the tail may pass
+=:repair-tail-p nil= for constant-time appends to a large log. Request repair
+again after loading the log following an interrupted write.
 
-Applications that have already verified the tail may pass =:repair-tail-p nil=
-for constant-time appends to a large log. They must request repair again after
-loading the log following an interrupted write.
-
-All reads bind =*read-eval*= to =nil=. Logs are designed for a serialized
-writer and any number of readers. They do not provide cross-process locking.
+All reads bind =*read-eval*= to =nil=. Logs are for one serialized writer and
+any number of readers.
 
 * Tests
 
