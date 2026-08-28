@@ -41,6 +41,38 @@ again after loading the log following an interrupted write.
 All reads bind =*read-eval*= to =nil=. Logs are for one serialized writer and
 any number of readers.
 
+* Versioned records
+
+A record is one form shaped =(TAG :version VERSION . PROPERTIES)=. Field
+descriptions replace hand-rolled validators:
+
+#+BEGIN_SRC lisp
+(sexp-store:snapshot-write
+ #P"job.sexp"
+ (sexp-store:make-record :job 2 :name "sync" :retries 3))
+
+(sexp-store:snapshot-read-record
+ #P"job.sexp"
+ :tag :job
+ :versions '(1 2)
+ :fields (list (list :indicator :name
+                     :validate (lambda (value)
+                                 (and (stringp value)
+                                      (plusp (length value))))
+                     :required t)
+               (list :indicator :retries
+                     :validate #'integerp
+                     :required '(2))))
+#+END_SRC
+
+- =:required= lists the versions that must carry the property, or =t= for all
+- =:validate= is applied to present values only
+- =:allow-other-keys nil= rejects properties beyond =:version= and the
+  described fields
+- =record-check= validates an in-memory form and returns a reason on failure
+- =record-version=, =record-property=, and =record-property-present-p= read
+  validated forms without =getf= pitfalls on malformed input
+
 * Tests
 
 #+BEGIN_SRC lisp
