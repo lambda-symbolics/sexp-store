@@ -141,6 +141,86 @@
       (close stream)))
   nil)
 
+(defun tests--record-fields ()
+  "Return the field descriptions shared by the record tests."
+  (list (list :indicator ':name
+              :validate (lambda (value)
+                          (and (stringp value) (plusp (length value))))
+              :required t)
+        (list :indicator ':retries
+              :validate #'integerp
+              :required '(2))
+        (list :indicator ':note
+              :validate #'stringp)))
+
+(defun tests--records (root)
+  "Exercise versioned record validation beneath ROOT."
+  (let ((fields (tests--record-fields)))
+    (flet ((check (form &key (allow-other-keys t))
+             (record-check form
+                           :tag ':job
+                           :versions '(1 2)
+                           :fields fields
+                           :allow-other-keys allow-other-keys)))
+      (test-assert (equal (make-record ':job 2 ':name "sync")
+                          '(:job :version 2 :name "sync"))
+                   "records are built as tagged property lists")
+      (test-assert (check (make-record ':job 1 ':name "sync"))
+                   "a record with its required properties is valid")
+      (test-assert (check (make-record ':job 2 ':name "sync" ':retries 3))
+                   "a record may add properties required by its version")
+      (test-assert (not (check '(:task :version 1 :name "sync")))
+                   "records with a foreign tag are rejected")
+      (test-assert (not (check '(:job :version 1 :name)))
+                   "records with an incomplete property list are rejected")
+      (test-assert (not (check (make-record ':job 3 ':name "sync")))
+                   "records with an unsupported version are rejected")
+      (test-assert (not (check (make-record ':job 2 ':name "sync")))
+                   "records missing a version's required property are rejected")
+      (test-assert (not (check (make-record ':job 1 ':name "")))
+                   "records with an unsupported property value are rejected")
+      (test-assert (not (check (make-record ':job 1 ':name "sync" ':extra t)
+                               :allow-other-keys nil))
+                   "strict records reject undescribed properties")
+      (multiple-value-bind (valid-p reason)
+          (check (make-record ':job 2 ':name "sync"))
+        (test-assert (and (not valid-p)
+                          (search ":RETRIES" reason))
+                     "invalid records report the failing property"))
+      (test-assert (and (eql (record-version '(:job :version 2)) 2)
+                        (null (record-version '(:job :version)))
+                        (equal (record-property
+                                (make-record ':job 1 ':name "sync")
+                                ':name)
+                               "sync")
+                        (eql (record-property '(:job :version 1) ':name 7) 7)
+                        (record-property-present-p
+                         (make-record ':job 1 ':name nil)
+                         ':name)
+                        (not (record-property-present-p
+                              (make-record ':job 1)
+                              ':name)))
+                   "record accessors read versions and properties safely"))
+    (let ((pathname (merge-pathnames "record.sexp" root)))
+      (snapshot-write pathname (make-record ':job 2 ':name "sync"
+                                            ':retries 3))
+      (multiple-value-bind (form version)
+          (snapshot-read-record pathname
+                                :tag ':job
+                                :versions '(1 2)
+                                :fields fields)
+        (test-assert (and (= version 2)
+                          (equal (record-property form ':name) "sync"))
+                     "snapshot records round-trip with their version"))
+      (snapshot-write pathname (make-record ':job 3 ':name "sync"))
+      (test-assert (signals store-error
+                     (snapshot-read-record pathname
+                                           :tag ':job
+                                           :versions '(1 2)
+                                           :fields fields))
+                   "malformed snapshot records signal STORE-ERROR")))
+  nil)
+
 (defun run-tests ()
   "Run every sexp-store regression test."
   (setf *test-count* 0)
@@ -154,7 +234,8 @@
     (unwind-protect
          (progn
            (tests--snapshots root)
-           (tests--logs root))
+           (tests--logs root)
+           (tests--records root))
       (uiop:delete-directory-tree root
                                   :validate t
                                   :if-does-not-exist :ignore)))
