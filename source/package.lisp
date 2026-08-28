@@ -4,8 +4,14 @@
            #:log-map
            #:log-read
            #:log-write
+           #:make-record
            #:publication-conflict
+           #:record-check
+           #:record-property
+           #:record-property-present-p
+           #:record-version
            #:snapshot-read
+           #:snapshot-read-record
            #:snapshot-write
            #:store-error
            #:store-error-cause
@@ -19,8 +25,14 @@
                 #:log-map
                 #:log-read
                 #:log-write
+                #:make-record
                 #:publication-conflict
+                #:record-check
+                #:record-property
+                #:record-property-present-p
+                #:record-version
                 #:snapshot-read
+                #:snapshot-read-record
                 #:snapshot-write
                 #:store-error)
   (:export #:run-tests))
