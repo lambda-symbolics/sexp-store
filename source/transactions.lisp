@@ -236,17 +236,19 @@ When true the entire change is validated before one atomic publication, includin
 repair of an incomplete log tail. PUBLISH, when supplied, receives committed
 state only after successful persistence, including for a read-only transaction.
 Return RESULT and committed state. Callbacks must not expose or install their
-private working state before PUBLISH. Callback errors propagate unchanged;
-a PUBLISH failure occurs after commit and does not roll back durable state."
+private working state before PUBLISH. Finalizers and UPDATE may modify their
+working values; reconstruct the publication base independently under the same
+lock. Callback errors propagate unchanged; a PUBLISH failure occurs after commit
+and does not roll back durable state."
   (store--call-with-lock
    store
    (lambda ()
      (multiple-value-bind (state forms incomplete-p) (store--read store)
        (declare (ignore incomplete-p))
        (multiple-value-bind (change result write-p)
-           (funcall update (store--finalize store state))
+           (funcall update (store-read store :lock-held-p t))
          (when write-p
-          (setf state (store--publish store :state state :change change :forms forms)))
+           (setf state (store--publish store :state state :change change :forms forms)))
          (let ((committed (store--finalize store state)))
            (when publish
              (funcall publish committed))

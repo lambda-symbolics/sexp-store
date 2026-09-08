@@ -268,12 +268,61 @@
         (ignore-errors (sb-posix:waitpid pid 0)))
       (when (probe-file ready) (delete-file ready)))))
 
+(defun tests--transaction-working-state (root)
+  "Keep destructive finalizers and updater edits out of committed state."
+  (let* ((pathname (merge-pathnames "finalized-log.sexp" root))
+         (store (make-instance
+                 'sexp-store:log-store
+                 :pathname pathname
+                 :lock-pathname (merge-pathnames "finalized-log.lock" root)
+                 :header '(:entries :version 1)
+                 :header-validator (constantly t)
+                 :validator (constantly t)
+                 :initial-state (constantly nil)
+                 :reducer (lambda (state record)
+                            (cons (sexp-store:record-property record ':value) state))
+                 :finalizer #'nreverse)))
+    (log-write pathname '((:entries :version 1)
+                          (:entry :version 1 :value 1)
+                          (:entry :version 1 :value 2)))
+    (dolist (write-p '(nil t))
+      (let ((published nil))
+        (multiple-value-bind (result committed)
+            (sexp-store:store-transact
+             store
+             (lambda (state)
+               (test-assert (equal state '(1 2)) "updates receive finalized state")
+               (setf (first state) ':private-edit)
+               (values '((:entry :version 1 :value 3)) ':result write-p))
+             :publish (lambda (state) (setf published state)))
+          (let ((expected (if write-p '(1 2 3) '(1 2))))
+            (test-assert (and (eq result ':result)
+                              (equal committed expected)
+                              (equal published expected)
+                              (equal (sexp-store:store-read store) expected))
+                         "committed log state is independent of destructive callbacks")))))
+    (let ((snapshot (tests--transaction-snapshot (merge-pathnames "working/" root))))
+      (sexp-store:store-transact snapshot
+                                (lambda (state)
+                                  (declare (ignore state))
+                                  (values (list 1 2) nil t)))
+      (multiple-value-bind (result committed)
+          (sexp-store:store-transact
+           snapshot (lambda (state)
+                      (setf (first state) ':private-edit)
+                      (values nil ':read-only nil)))
+        (test-assert (and (eq result ':read-only)
+                          (equal committed '(1 2))
+                          (equal (sexp-store:store-read snapshot) '(1 2)))
+                     "read-only snapshot transactions do not publish working edits")))))
+
 (defun tests--transactions (root)
   "Run the generic log-fold and locked transaction checks beneath ROOT."
   (tests--transaction-replay root)
   (tests--transaction-invalid-records root)
   (tests--transaction-reducer-failure root)
   (tests--transaction-snapshots root)
+  (tests--transaction-working-state root)
   (tests--transaction-process-lock
    (tests--transaction-snapshot root)
    (merge-pathnames "transaction-snapshot.lock" root))
