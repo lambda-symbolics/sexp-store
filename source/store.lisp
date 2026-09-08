@@ -188,6 +188,7 @@ Malformed complete input signals STORE-ERROR."
                               :if-exists (if append :append :supersede)
                               :if-does-not-exist :create
                               :external-format :utf-8)
+        (store--set-mode pathname mode)
         (let ((*print-circle* t)
               (*print-readably* t)
               (*print-pretty* t))
@@ -201,7 +202,6 @@ Malformed complete input signals STORE-ERROR."
       (store--fail ':write pathname
                    (format nil "Could not write readable state: ~A" cause)
                    cause)))
-  (store--set-mode pathname mode)
   pathname)
 
 (defun store--publish-exclusive (temporary pathname)
@@ -239,8 +239,7 @@ when replacing an existing file. FORMS must be a finite proper list."
      (store--write-forms temporary forms :mode mode)
      (if require-absent
          (store--publish-exclusive temporary pathname)
-         (uiop:rename-file-overwriting-target temporary pathname))
-     (store--set-mode pathname mode))
+         (uiop:rename-file-overwriting-target temporary pathname)))
    :want-stream-p nil
    :directory (uiop:pathname-directory-pathname pathname)
    :prefix (format nil ".~A." (or (pathname-name pathname) "state")))

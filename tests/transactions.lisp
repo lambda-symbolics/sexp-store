@@ -316,6 +316,49 @@
                           (equal (sexp-store:store-read snapshot) '(1 2)))
                      "read-only snapshot transactions do not publish working edits")))))
 
+(defun tests--transaction-permissions (root)
+  "Check permission failures before changing durable records or caller state."
+  (let* ((store (tests--transaction-snapshot (merge-pathnames "permissions/" root)))
+         (pathname (merge-pathnames "permissions/transaction-snapshot.sexp" root))
+         (original (symbol-function 'sexp-store::store--set-mode))
+         (published nil))
+    (unwind-protect
+         (progn
+           (setf (symbol-function 'sexp-store::store--set-mode)
+                 (lambda (target mode)
+                   (when (equal target pathname)
+                     (error 'store-error :operation ':permissions :pathname target
+                                         :message "Injected target permission failure."))
+                   (funcall original target mode)))
+           (dolist (items '((1) (1 2)))
+             (sexp-store:store-transact
+              store (lambda (state)
+                      (declare (ignore state))
+                      (values items nil t))
+              :publish (lambda (state) (setf published state)))
+             (test-assert (and (equal published items)
+                               (equal (sexp-store:store-read store) items)
+                               (= (tests--file-mode pathname) #o600))
+                          "private snapshots publish without a fallible target chmod")))
+      (setf (symbol-function 'sexp-store::store--set-mode) original)))
+  (let* ((pathname (merge-pathnames "permissions-append.sexp" root))
+         (original (symbol-function 'sexp-store::store--set-mode)))
+    (log-write pathname '((:entry :id 1)))
+    (let ((before (uiop:read-file-string pathname)))
+      (unwind-protect
+           (progn
+             (setf (symbol-function 'sexp-store::store--set-mode)
+                   (lambda (target mode)
+                     (declare (ignore mode))
+                     (error 'store-error :operation ':permissions :pathname target
+                                         :message "Injected permission failure.")))
+             (test-assert (signals store-error
+                            (log-append pathname '(:entry :id 2)))
+                          "append permission failures are reported")
+             (test-assert (string= before (uiop:read-file-string pathname))
+                          "a permission failure precedes append publication"))
+        (setf (symbol-function 'sexp-store::store--set-mode) original)))))
+
 (defun tests--transactions (root)
   "Run the generic log-fold and locked transaction checks beneath ROOT."
   (tests--transaction-replay root)
@@ -323,6 +366,7 @@
   (tests--transaction-reducer-failure root)
   (tests--transaction-snapshots root)
   (tests--transaction-working-state root)
+  (tests--transaction-permissions root)
   (tests--transaction-process-lock
    (tests--transaction-snapshot root)
    (merge-pathnames "transaction-snapshot.lock" root))
