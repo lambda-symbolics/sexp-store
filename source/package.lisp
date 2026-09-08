@@ -16,6 +16,7 @@
            #:revision-write
            #:sidecar-read
            #:sidecar-write
+           #:sidecar-rebuild
            #:make-record
            #:publication-conflict
            #:record-check

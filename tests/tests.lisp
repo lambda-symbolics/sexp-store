@@ -240,6 +240,7 @@
            (tests--segments root)
            #+sbcl (tests--exclusive-publication root)
            (tests--sidecars root)
+           #+sbcl (tests--sidecar-rebuild root)
            (tests--finite-records))
       (uiop:delete-directory-tree root
                                   :validate t

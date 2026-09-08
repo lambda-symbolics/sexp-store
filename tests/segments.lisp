@@ -171,6 +171,87 @@
                  "cache reads never evaluate forms"))
   nil)
 
+#+sbcl
+(defun tests--sidecar-rebuild (root)
+  "Exclude a paused invalidation and release the source lock after build failures."
+  (let* ((path (merge-pathnames "locked-derived.sexp" root))
+         (source (merge-pathnames "source.sexp" root))
+         (revision-path (merge-pathnames "source-revision.sexp" root))
+         (lock-path (merge-pathnames "source.lock" root))
+         (invalidated (sb-thread:make-semaphore :count 0))
+         (continue-writer (sb-thread:make-semaphore :count 0))
+         (reader-started (sb-thread:make-semaphore :count 0))
+         (built (sb-thread:make-semaphore :count 0))
+         (threads nil))
+    (labels ((revision ()
+               (sexp-store:revision-read revision-path :tag ':revision))
+
+             (token (value)
+               (getf (rest value) :revision))
+
+             (build ()
+               (sb-thread:signal-semaphore built)
+               (list :derived :data (snapshot-read source) :revision (revision)))
+
+             (rebuild (function)
+               (sexp-store:sidecar-rebuild
+                path :lock-pathname lock-path :build function :encode #'identity
+                     :source-token #'revision :value-token #'token)))
+      (snapshot-write source ':a)
+      (sexp-store:revision-write revision-path 1 :tag ':revision)
+      (unwind-protect
+           (progn
+             (push (sb-thread:make-thread
+                    (lambda ()
+                      (ls-flock:call-with-file-lock
+                       lock-path
+                       (lambda ()
+                         (sexp-store:revision-write revision-path 2 :tag ':revision)
+                         (sb-thread:signal-semaphore invalidated)
+                         (sb-thread:wait-on-semaphore continue-writer)
+                         (snapshot-write source ':b)))))
+                   threads)
+             (test-assert (sb-thread:wait-on-semaphore invalidated :timeout 5)
+                          "the source writer reaches invalidation")
+             (push (sb-thread:make-thread
+                    (lambda ()
+                      (sb-thread:signal-semaphore reader-started)
+                      (rebuild #'build)))
+                   threads)
+             (test-assert (sb-thread:wait-on-semaphore reader-started :timeout 5)
+                          "the rebuilder starts while invalidation is paused")
+             (test-assert (not (sb-thread:wait-on-semaphore built :timeout 0.1))
+                          "reconstruction cannot read source bytes during a mutation")
+             (sb-thread:signal-semaphore continue-writer)
+             (let ((value (sb-thread:join-thread (first threads) :timeout 5 :default nil)))
+               (test-assert (equal value '(:derived :data :b :revision 2))
+                            "the new revision identifies the completed source mutation")
+               (test-assert
+                (equal value (sexp-store:sidecar-read
+                              path :decode #'identity :source-token #'revision
+                                   :value-token #'token))
+                "a reconstructed sidecar contains the matching source value"))
+             (sb-thread:join-thread (second threads) :timeout 5 :default nil)
+             (test-assert (signals store-error
+                            (rebuild (lambda ()
+                                       (error 'store-error :pathname source
+                                                          :operation ':read
+                                                          :message "Build failed."))))
+                          "construction errors propagate")
+             (test-assert (equal (rebuild #'build) '(:derived :data :b :revision 2))
+                          "a construction error releases the source lock")
+             (test-assert (null (rebuild (constantly nil)))
+                          "a declined reconstruction publishes nothing")
+             (test-assert (signals store-error
+                            (sexp-store:sidecar-rebuild path :build #'build))
+                          "a source lock is required before calling the builder"))
+        (sb-thread:signal-semaphore continue-writer)
+        (dolist (thread threads)
+          (when (sb-thread:thread-alive-p thread)
+            (sb-thread:terminate-thread thread))
+          (ignore-errors (sb-thread:join-thread thread :timeout 5 :default nil))))))
+  nil)
+
 (defun tests--finite-records ()
   "Reject non-finite record spines and define duplicate-property behavior."
   (dolist (body (list '(:version 1 :missing)

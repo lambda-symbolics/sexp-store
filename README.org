@@ -143,19 +143,29 @@ barriers is outside this contract.
 * Derived snapshots
 
 Use =revision-write= before authoritative source mutations under the writer lock.
-=revision-read= returns zero for absent or malformed revisions. Supply the
-product's record tag and optional version to both operations.
+Hold that same lock across cache reconstruction and publication. Otherwise a
+reader can stamp old source data with the writer's new revision while the writer
+is between invalidation and mutation. =revision-read= returns zero for absent or
+malformed revisions. Supply the product's tag and optional version to both calls.
+
+Use =sidecar-rebuild= with =:lock-pathname= naming the source writer lock and a
+zero-argument =:build= callback that reads source data and its token under that
+lock. Supply =:encode=, =:source-token= and =:value-token= as for =sidecar-write=.
+The lock covers reconstruction through publication. A =nil= build result skips
+publication; lock, build and publication errors propagate.
 
 =sidecar-read= accepts =:decode=, a zero-argument =:source-token= callback and a
 =:value-token= extractor. Tokens are compared with =equal= before and after
 reading. Malformed, stale or concurrently invalidated cache data returns =nil=.
-Optional =:validate= adds domain constraints. =sidecar-write= accepts =:encode=
-and the same token callbacks, declining stale publication. Source mutations must
-increment the revision before writing source bytes.
+Optional =:validate= adds domain constraints. Under the shared-lock protocol,
+cache hits need no lock. =sidecar-write= accepts a prebuilt value with =:encode=
+and the same token callbacks, declining stale publication. Hold the source lock
+from before constructing that value until publication completes, or build from
+an immutable committed snapshot with its matching token.
 
 =file-revision= returns pathname, byte size and write date. Combine these with
-an explicit revision, since size and date cannot distinguish same-size edits
-within one clock tick.
+an explicit revision and source locking, since size and date cannot distinguish
+same-size edits within one clock tick.
 
 * Tests
 
