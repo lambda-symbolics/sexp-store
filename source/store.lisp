@@ -178,20 +178,6 @@ Malformed complete input signals STORE-ERROR."
                      cause))))
   pathname)
 
-(defun store--temporary-pathname (pathname)
-  "Return an unused temporary pathname beside PATHNAME."
-  (loop
-    for nonce = (random most-positive-fixnum)
-    for temporary =
-      (make-pathname
-       :name (format nil ".~A.~D.~D"
-                     (or (pathname-name pathname) "state")
-                     (get-universal-time)
-                     nonce)
-       :type "tmp"
-       :defaults pathname)
-    unless (probe-file temporary)
-      return temporary))
 
 (defun store--write-forms (pathname forms &key append mode)
   "Write readable FORMS to PATHNAME, optionally appending them."
@@ -218,28 +204,46 @@ Malformed complete input signals STORE-ERROR."
   (store--set-mode pathname mode)
   pathname)
 
+(defun store--publish-exclusive (temporary pathname)
+  "Publish TEMPORARY through an atomic create-only hard link to PATHNAME."
+  #+sbcl
+  (handler-case
+      (sb-posix:link (uiop:native-namestring temporary)
+                     (uiop:native-namestring pathname))
+    (sb-posix:syscall-error (cause)
+      (if (= (sb-posix:syscall-errno cause) sb-posix:eexist)
+          (error 'publication-conflict
+                 :message "The state file appeared during publication."
+                 :operation ':publish :pathname pathname :cause cause)
+          (store--fail ':publish pathname
+                       "Could not exclusively publish readable state." cause))))
+  #-sbcl
+  (store--fail ':publish pathname
+               "Exclusive readable-state publication requires SBCL POSIX support.")
+  pathname)
+
 (defun log-write (pathname forms &key (mode #o600) require-absent)
   "Atomically publish complete readable FORMS at PATHNAME.
 
-When REQUIRE-ABSENT is true, signal PUBLICATION-CONFLICT rather than replacing
-a target that appeared while the temporary file was being written. Callers
-must serialize competing writers when replacing an existing file."
-  (unless (listp forms)
-    (store--fail ':write pathname "FORMS must be a list."))
-  (let ((temporary (store--temporary-pathname pathname)))
-    (unwind-protect
-         (progn
-           (store--write-forms temporary forms :mode mode)
-           (when (and require-absent (probe-file pathname))
-             (error 'publication-conflict
-                    :message "The state file appeared during publication."
-                    :operation ':publish
-                    :pathname pathname
-                    :cause nil))
-           (uiop:rename-file-overwriting-target temporary pathname)
-           (store--set-mode pathname mode))
-      (when (probe-file temporary)
-        (delete-file temporary))))
+When REQUIRE-ABSENT is true, publish through an atomic create-only hard link and
+signal PUBLICATION-CONFLICT if any directory entry already occupies the target.
+Otherwise replace the target by rename. Callers must serialize competing writers
+when replacing an existing file. FORMS must be a finite proper list."
+  (unless (handler-case (not (null (list-length forms)))
+            (type-error () nil))
+    (store--fail ':write pathname "FORMS must be a finite proper list."))
+  (ensure-directories-exist pathname)
+  (uiop:call-with-temporary-file
+   (lambda (temporary)
+     (store--set-mode temporary #o600)
+     (store--write-forms temporary forms :mode mode)
+     (if require-absent
+         (store--publish-exclusive temporary pathname)
+         (uiop:rename-file-overwriting-target temporary pathname))
+     (store--set-mode pathname mode))
+   :want-stream-p nil
+   :directory (uiop:pathname-directory-pathname pathname)
+   :prefix (format nil ".~A." (or (pathname-name pathname) "state")))
   pathname)
 
 (defun snapshot-write (pathname form &key (mode #o600) require-absent)

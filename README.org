@@ -73,6 +73,90 @@ descriptions replace hand-rolled validators:
 - =record-version=, =record-property=, and =record-property-present-p= read
   validated forms without =getf= pitfalls on malformed input
 
+* Transactions
+
+Construct a =log-store= or =snapshot-store= with explicit =:pathname=,
+=:lock-pathname=, an =:initial-state= factory and a =:validator= predicate.
+Use =store-read= for validated fresh state, or =store-transact= for one locked
+read/modify/publish operation. Locks exclude local threads and cooperating
+processes through =ls-flock=.
+
+For a =log-store=, supply =:header=, =:header-validator=, and a =:reducer= of
+state and record. An optional =:finalizer= converts folded state to its public
+value. For a =snapshot-store=, supply =:decoder= and =:encoder= callbacks.
+The updater receives fresh public state and returns changes, a result, and
+whether to write. Log changes are a list of records; snapshot changes are
+replacement state. A log batch is validated and published in one operation,
+including removal of an incomplete final form. Existing empty or malformed
+files are errors, rather than missing stores.
+
+#+BEGIN_SRC lisp
+(sexp-store:store-transact
+ store
+ (lambda (current)
+   (declare (ignore current))
+   (values (list '(:item :version 1 :id "a" :value 42)) :updated t))
+ :publish (lambda (committed) (setf cached-state committed)))
+#+END_SRC
+
+The optional =:publish= callback runs after successful persistence. Keep working
+state private until then. A publication-callback failure occurs after commit and
+cannot roll back the file. Return values are the updater result and committed
+public state. A read-only transaction also returns fresh state.
+
+=record-finite-p= validates acyclic portable data while allowing shared
+substructure. =record-shape-p= additionally requires a keyword-tagged property
+record. Stores reject duplicate keys by default; =:duplicate-keys :first= enables
+explicit first-value compatibility. =record-check= accepts
+=:allow-duplicate-keys t= for the same policy. Domain callbacks own field and
+version validation.
+
+* Segmented logs
+
+Use =segment-map= for one header-prefixed segment and =segments-map= for an
+ordered list of physical paths. Supply =:header-function=, which receives a
+pathname and header and returns the positive start sequence and whether an empty
+segment is allowed. Supply =:record-sequence= to extract each record's sequence.
+Optional =:validate-record= and =:validate-first-record= callbacks express the
+record schema and checkpoint policy.
+
+Replay requires contiguous sequences within and between segments. Torn final
+forms are ignored, including in sealed segments; complete malformed forms are
+errors. =segment-map= returns byte position, tail flag, record count, start
+sequence and next sequence. =segments-map= returns active tail flag, total count
+and next sequence. Callback conditions propagate unchanged.
+
+=segment-publish= atomically creates a header and first record. Supply
+=:lock-pathname= or hold an external writer lease. An optional zero-argument
+=:occupied-p= predicate includes related product storage in the occupancy check.
+A preexisting segment is a conflict, even when identical. If publication signals
+after creating the file, exact readback permits recovery. Adopt active state
+only after return. =log-repair-tail= removes only an incomplete final form under
+the writer lock and returns whether replacement was needed.
+
+Create-only publication uses an atomic hard link on the supported SBCL POSIX
+backend, rejecting any occupied target entry, including dangling symlinks.
+Replacements use same-directory rename. Operations flush Lisp output and support
+process-crash recovery; power-loss persistence through filesystem synchronization
+barriers is outside this contract.
+
+* Derived snapshots
+
+Use =revision-write= before authoritative source mutations under the writer lock.
+=revision-read= returns zero for absent or malformed revisions. Supply the
+product's record tag and optional version to both operations.
+
+=sidecar-read= accepts =:decode=, a zero-argument =:source-token= callback and a
+=:value-token= extractor. Tokens are compared with =equal= before and after
+reading. Malformed, stale or concurrently invalidated cache data returns =nil=.
+Optional =:validate= adds domain constraints. =sidecar-write= accepts =:encode=
+and the same token callbacks, declining stale publication. Source mutations must
+increment the revision before writing source bytes.
+
+=file-revision= returns pathname, byte size and write date. Combine these with
+an explicit revision, since size and date cannot distinguish same-size edits
+within one clock tick.
+
 * Tests
 
 #+BEGIN_SRC lisp

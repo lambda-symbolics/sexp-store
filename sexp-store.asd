@@ -2,14 +2,17 @@
   :description "Crash-tolerant readable Common Lisp state files"
   :author "Lukáš Hozda"
   :license "ISC"
-  :version "0.3.0"
+  :version "0.4.0"
   :serial t
-  :depends-on (#:ls-compat/posix)
+  :depends-on (#:ls-compat/posix #:ls-flock)
   :components ((:module "source"
                 :serial t
                 :components ((:file "package")
                              (:file "store")
-                             (:file "records"))))
+                             (:file "records")
+                             (:file "transactions")
+                             (:file "segments")
+                             (:file "sidecars"))))
   :in-order-to ((asdf:test-op (asdf:test-op #:sexp-store/tests))))
 
 (asdf:defsystem #:sexp-store/tests
@@ -19,7 +22,9 @@
   :components ((:module "tests"
                 :serial t
                 :components ((:file "package")
-                             (:file "tests"))))
+                             (:file "tests")
+                             (:file "transactions")
+                             (:file "segments"))))
   :perform (asdf:test-op (operation component)
              (declare (ignore operation component))
              (uiop:symbol-call '#:sexp-store/tests '#:run-tests)))

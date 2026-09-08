@@ -235,7 +235,12 @@
          (progn
            (tests--snapshots root)
            (tests--logs root)
-           (tests--records root))
+           (tests--records root)
+           (tests--transactions root)
+           (tests--segments root)
+           #+sbcl (tests--exclusive-publication root)
+           (tests--sidecars root)
+           (tests--finite-records))
       (uiop:delete-directory-tree root
                                   :validate t
                                   :if-does-not-exist :ignore)))
