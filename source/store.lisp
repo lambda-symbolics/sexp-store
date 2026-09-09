@@ -206,20 +206,28 @@ Malformed complete input signals STORE-ERROR."
 
 (defun store--publish-exclusive (temporary pathname)
   "Publish TEMPORARY through an atomic create-only hard link to PATHNAME."
-  #+sbcl
   (handler-case
-      (sb-posix:link (uiop:native-namestring temporary)
-                     (uiop:native-namestring pathname))
-    (sb-posix:syscall-error (cause)
-      (if (= (sb-posix:syscall-errno cause) sb-posix:eexist)
-          (error 'publication-conflict
-                 :message "The state file appeared during publication."
-                 :operation ':publish :pathname pathname :cause cause)
-          (store--fail ':publish pathname
-                       "Could not exclusively publish readable state." cause))))
-  #-sbcl
-  (store--fail ':publish pathname
-               "Exclusive readable-state publication requires SBCL POSIX support.")
+      (ls-compat.posix:link-file temporary pathname)
+    (ls-compat.posix:link-target-exists (cause)
+      (error 'publication-conflict
+             :message "The state file appeared during publication."
+             :operation ':publish :pathname pathname :cause cause))
+    (error (cause)
+      (store--fail ':publish pathname
+                   "Could not exclusively publish readable state." cause)))
+  pathname)
+
+(defun store--make-replaceable (pathname)
+  "Let a rename replace PATHNAME even when it was published read-only.
+
+Windows refuses to rename over a file carrying the read-only attribute, which
+a read-only publication mode sets, so that attribute is cleared first. POSIX
+renames replace any file its directory permits, so nothing is needed there."
+  #+win32
+  (when (probe-file pathname)
+    (setf (ls-compat.posix:file-mode pathname) #o600))
+  #-win32
+  pathname
   pathname)
 
 (defun log-write (pathname forms &key (mode #o600) require-absent)
@@ -239,7 +247,9 @@ when replacing an existing file. FORMS must be a finite proper list."
      (store--write-forms temporary forms :mode mode)
      (if require-absent
          (store--publish-exclusive temporary pathname)
-         (uiop:rename-file-overwriting-target temporary pathname)))
+         (progn
+           (store--make-replaceable pathname)
+           (uiop:rename-file-overwriting-target temporary pathname))))
    :want-stream-p nil
    :directory (uiop:pathname-directory-pathname pathname)
    :prefix (format nil ".~A." (or (pathname-name pathname) "state")))
