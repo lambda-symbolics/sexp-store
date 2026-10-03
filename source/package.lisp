@@ -37,7 +37,10 @@
            #:store-error-message
            #:store-error-cause
            #:store-error-operation
-           #:store-error-pathname))
+           #:store-error-pathname
+           #:files-publish
+           #:publication-rollback-failed
+           #:publication-rollback-failed-failures))
 
 (defpackage #:sexp-store/tests
   (:use #:cl)
@@ -55,5 +58,8 @@
                 #:snapshot-read
                 #:snapshot-read-record
                 #:snapshot-write
-                #:store-error)
+                #:store-error
+                #:files-publish
+                #:publication-rollback-failed
+                #:publication-rollback-failed-failures)
   (:export #:run-tests))

@@ -173,6 +173,29 @@ an immutable committed snapshot with its matching token.
 an explicit revision and source locking, since size and date cannot distinguish
 same-size edits within one clock tick.
 
+* Multi-file publication
+
+=files-publish= publishes several files as one transaction:
+
+#+BEGIN_SRC lisp
+(sexp-store:files-publish
+ (list (list :pathname #P"state/a.sexp" :octets new-a :expected old-a)
+       (list :pathname #P"state/b.sexp" :octets new-b :expected nil))
+ :check (lambda (pathname) (refuse-unless-inside-root pathname)))
+#+END_SRC
+
+Every replacement and a copy of every previous content are staged beside their
+targets first. Each target is compared with its =:expected= octets, or must be
+absent when that is =nil=, immediately before it is published, and a changed
+target signals =publication-conflict=. On any failure the targets already
+published are restored or removed and new directories are removed. A target
+that changed again before it could be restored is left alone with its copy
+kept, and =publication-rollback-failed= lists those copies.
+
+=:check= sees every target before staging, publishing and restoring. New files
+are created with =:mode= (default =0600=) and new directories with
+=:directory-mode= (default =0700=).
+
 * Tests
 
 #+BEGIN_SRC lisp

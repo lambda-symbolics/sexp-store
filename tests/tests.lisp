@@ -280,7 +280,8 @@
            #+sbcl (tests--exclusive-publication root)
            (tests--sidecars root)
            #+sbcl (tests--sidecar-rebuild root)
-           (tests--finite-records))
+           (tests--finite-records)
+           (tests--files root))
       (uiop:delete-directory-tree root
                                   :validate t
                                   :if-does-not-exist :ignore)))

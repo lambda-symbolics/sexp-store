@@ -12,7 +12,8 @@
                              (:file "records")
                              (:file "transactions")
                              (:file "segments")
-                             (:file "sidecars"))))
+                             (:file "sidecars")
+                             (:file "files"))))
   :in-order-to ((asdf:test-op (asdf:test-op #:sexp-store/tests))))
 
 (asdf:defsystem #:sexp-store/tests
@@ -24,7 +25,8 @@
                 :components ((:file "package")
                              (:file "tests")
                              (:file "transactions")
-                             (:file "segments"))))
+                             (:file "segments")
+                             (:file "files"))))
   :perform (asdf:test-op (operation component)
              (declare (ignore operation component))
              (uiop:symbol-call '#:sexp-store/tests '#:run-tests)))
