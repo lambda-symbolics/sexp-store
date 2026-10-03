@@ -46,6 +46,17 @@
                  "no staging files remain after success")
     (test-assert (= (tests--file-mode fresh) #o600)
                  "new files are private")
+    (let ((wild (uiop:parse-native-namestring
+                 (concatenate 'string
+                              (uiop:native-namestring directory)
+                              "odd [dir]*/name *?[x].sexp"))))
+      (test-assert (and (= 1 (files-publish (list (list :pathname wild
+                                                        :octets (tests--octets "wild")
+                                                        :expected nil))))
+                        (equalp (tests--file-octets wild) (tests--octets "wild")))
+                   "targets whose names hold wildcard characters publish literally")
+      (delete-file wild)
+      (uiop:delete-empty-directory (uiop:pathname-directory-pathname wild)))
     (let ((another (merge-pathnames "other/another.txt" directory)))
       (test-assert
        (handler-case

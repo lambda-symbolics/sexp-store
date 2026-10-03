@@ -138,12 +138,14 @@ files."
 (defun files--stage (target octets mode random-state)
   "Write OCTETS to a new private staging file beside TARGET and return its pathname."
   (loop
+    ;; MAKE-PATHNAME keeps a target directory holding wildcard characters
+    ;; literal, which parsing a namestring would not.
     (let ((pathname
-            (merge-pathnames
-             (format nil ".~A.~36R.staging"
-                     (or (pathname-name target) "file")
-                     (random (expt 36 12) random-state))
-             (uiop:pathname-directory-pathname target))))
+            (make-pathname :name (format nil ".sexp-store-~36R"
+                                         (random (expt 36 12) random-state))
+                           :type "staging"
+                           :version nil
+                           :defaults (uiop:pathname-directory-pathname target))))
       (let ((stream (handler-case
                         (open pathname
                               :direction :output
