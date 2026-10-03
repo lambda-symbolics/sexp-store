@@ -259,6 +259,68 @@
                "an empty property schema accepts an empty body")
   nil)
 
+(defun tests--plist-schemas ()
+  "Exercise structured property-list diagnostics and bounded spine validation."
+  (dolist (case '(((:name "x") () nil nil)
+                  ((:unknown) (:allowed-keys (:name)) :odd nil)
+                  ((:name . "x") () :improper nil)
+                  ((name "x") () :non-keyword name)
+                  ((:other "x") (:allowed-keys (:name)) :unknown :other)
+                  ((:name "x" :name "y") () :duplicate :name)
+                  ((:name "x" :name "y") (:allow-duplicate-keys t) nil nil)
+                  ((:name nil) (:required-keys (:name)) nil nil)
+                  (() (:required-keys (:name)) :missing :name)
+                  ((:name "x") (:allowed-keys nil) :unknown :name)
+                  ((:name "x") (:maximum-length 2) nil nil)
+                  ((:name "x") (:maximum-length 1) :too-long nil)))
+    (destructuring-bind (properties options expected-problem expected-key) case
+      (multiple-value-bind (problem key)
+          (apply #'sexp-store:plist-schema-problem properties options)
+        (test-assert (and (eq problem expected-problem) (eq key expected-key))
+                     "property schemas return structural or field diagnostics"))))
+  (let ((cycle (list :name "x")))
+    (setf (cddr cycle) cycle)
+    (test-assert (eq (sexp-store:plist-schema-problem cycle) :improper)
+                 "schema validation terminates on cyclic property lists"))
+  (test-assert
+   (eq (sexp-store:plist-schema-problem (make-list 100000) :maximum-length 2) :too-long)
+   "bounded schemas stop before traversing oversized property spines")
+  (test-assert (sexp-store:plist-schema-p nil :allowed-keys nil :maximum-length 0)
+               "an empty schema accepts an empty property body")
+  nil)
+
+(defun tests--bounded-snapshot-records (root)
+  "Exercise storage and schema validation with an explicit bounded data grammar."
+  (let* ((path (merge-pathnames "bounded-record.sexp" root))
+         (grammar (sexp-config:make-source-grammar
+                   :label "bounded snapshot" :maximum-depth 4 :maximum-nodes 32
+                   :maximum-string-characters 8)))
+    (snapshot-write path '(:name "sync"))
+    (test-assert
+     (equal (snapshot-read-record path :grammar grammar :maximum-octets 1024
+                                      :properties-p t :keyword-keys-p t
+                                      :maximum-length 2
+                                      :fields '((:indicator :name :required t :validate stringp)))
+            '(:name "sync"))
+     "bounded snapshot records support unversioned property lists")
+    (test-assert
+     (signals store-error
+       (snapshot-read-record path :grammar grammar :properties-p t :versions nil))
+     "an explicit empty version set accepts no version")
+    (tests--write-text path "(:name \"sync\") nil")
+    (test-assert (signals store-error (snapshot-read path :grammar grammar))
+                 "bounded snapshots require exactly one form")
+    (tests--write-text path "(:name \"too long for this grammar\")")
+    (test-assert (signals store-error (snapshot-read path :grammar grammar))
+                 "bounded reader errors cross the storage boundary as STORE-ERROR")
+    (tests--write-text path "(:name \"sync\")")
+    (test-assert (signals store-error (snapshot-read path :grammar grammar :maximum-octets 4))
+                 "bounded snapshots forward the file octet limit")
+    (snapshot-write path '(:job :name "sync"))
+    (test-assert (equal (snapshot-read-record path :tag ':job) '(:job :name "sync"))
+                 "tagged snapshot records support omitted version semantics"))
+  nil)
+
 (defun run-tests ()
   "Run every sexp-store regression test."
   (setf *test-count* 0)
@@ -275,6 +337,8 @@
            (tests--logs root)
            (tests--records root)
            (tests--property-records)
+           (tests--plist-schemas)
+           (tests--bounded-snapshot-records root)
            (tests--transactions root)
            (tests--segments root)
            #+sbcl (tests--exclusive-publication root)

@@ -14,6 +14,11 @@ It provides atomic single-form snapshots and crash-tolerant append logs.
   (values form sole-form-p))
 #+END_SRC
 
+Supply =:grammar= with a =sexp-config= source grammar and =:maximum-octets=
+for bounded data-only snapshot reads. That mode requires exactly one form and
+wraps grammar diagnostics in =store-error=. =snapshot-read-record= forwards
+both options along with the complete =record-check= schema.
+
 Snapshot publication writes a complete temporary file beside the target and
 renames it over the target. The default Unix mode is =0600= on supported POSIX
 environments. Pass =:mode nil= when permissions are managed separately.
@@ -78,6 +83,13 @@ Field descriptions replace hand-written validators:
   plist elements, counting both indicators and values.
 - =record-version=, =record-property=, and =record-property-present-p= read
   validated forms without =getf= pitfalls on malformed input
+
+For a plist alone, =plist-schema-problem= returns a problem keyword and the
+field involved, or two =nil= values. Supply =:allowed-keys=, =:required-keys=,
+=:keyword-keys-p=, =:maximum-length= and =:allow-duplicate-keys= as needed.
+An omitted allowed-key list permits any key; an explicit empty list permits
+none. =plist-schema-p= returns the corresponding boolean. With a length bound,
+validation stops at that bound before scanning the rest of the spine.
 
 * Transactions
 

@@ -1,6 +1,8 @@
 (defpackage #:sexp-store
   (:use #:cl)
   (:export #:log-append
+           #:plist-schema-p
+           #:plist-schema-problem
            #:log-map
            #:log-read
            #:log-write

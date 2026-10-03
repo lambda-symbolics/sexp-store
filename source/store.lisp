@@ -47,22 +47,25 @@
 
 ;;;; -- Reading --
 
-(defun snapshot-read (pathname)
+(defun snapshot-read (pathname &key grammar maximum-octets)
   "Read PATHNAME with evaluation disabled.
 
-Return the first form and true only when it is the file's sole complete form.
-Reader errors are wrapped in STORE-ERROR."
+Return the first form and true only when it is the sole complete form. Supply
+GRAMMAR for bounded data-only, exact-one-form reading through SEXP-CONFIG;
+MAXIMUM-OCTETS bounds that capture. Reader errors are wrapped in STORE-ERROR."
   (handler-case
-      (with-open-file (stream pathname
-                              :direction :input
-                              :external-format :utf-8)
-        (let* ((*read-eval* nil)
-               (end-marker (cons nil nil))
-               (form (read stream nil end-marker))
-               (extra (read stream nil end-marker)))
-          (values form
-                  (and (not (eq form end-marker))
-                       (eq extra end-marker)))))
+      (if grammar
+          (values (sexp-config:read-source-file pathname grammar
+                                                :maximum-octets maximum-octets)
+                  t)
+          (with-open-file (stream pathname :direction :input :external-format :utf-8)
+            (when (and maximum-octets (> (file-length stream) maximum-octets))
+              (store--fail ':read pathname "The state snapshot exceeds its octet limit."))
+            (let* ((*read-eval* nil)
+                   (end-marker (cons nil nil))
+                   (form (read stream nil end-marker))
+                   (extra (read stream nil end-marker)))
+              (values form (and (not (eq form end-marker)) (eq extra end-marker))))))
     (store-error (condition)
       (error condition))
     (error (cause)

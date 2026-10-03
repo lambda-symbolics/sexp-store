@@ -4,10 +4,11 @@
   :license "ISC"
   :version "0.4.0"
   :serial t
-  :depends-on (#:ls-compat/posix #:ls-flock)
+  :depends-on (#:ls-compat/posix #:ls-flock #:sexp-config)
   :components ((:module "source"
                 :serial t
                 :components ((:file "package")
+                             (:file "lists")
                              (:file "store")
                              (:file "records")
                              (:file "transactions")
