@@ -46,36 +46,42 @@
        (record--present-p (rest form) indicator)))
 
 (defun record-check
-    (form &key tag versions fields (allow-other-keys t) allow-duplicate-keys)
-  "Check FORM as one versioned TAG record.
+    (form &key tag (versions nil versions-p) fields (allow-other-keys t)
+               allow-duplicate-keys properties-p keyword-keys-p maximum-length)
+  "Check FORM against a property record schema.
 
-FORM must be (TAG :version VERSION . PROPERTIES) with VERSION in
-VERSIONS. Each entry in FIELDS is a plist describing one property:
-:INDICATOR names it, :VALIDATE optionally gives a predicate applied to
-present values, and :REQUIRED optionally lists the versions that must
-carry it, or T for every version. Unless ALLOW-OTHER-KEYS is true,
-properties beyond :version and the described fields are rejected. The property
-list must be finite. Duplicate indicators are rejected unless ALLOW-DUPLICATE-KEYS
-is true, in which case the first value wins, as with GETF.
+FORM is (TAG . PROPERTIES), or PROPERTIES itself when PROPERTIES-P is true.
+Supplying VERSIONS requires its :version value to belong to that list; omitting
+VERSIONS leaves the record unversioned. Each entry in FIELDS is a plist:
+:INDICATOR names a property, :VALIDATE optionally checks present values, and
+:REQUIRED is T or a list of versions that must carry it. ALLOW-OTHER-KEYS NIL
+rejects undescribed properties, except :version when VERSIONS is supplied.
+The body must be a finite plist. KEYWORD-KEYS-P requires keyword indicators,
+and MAXIMUM-LENGTH bounds the number of plist elements. Duplicate indicators
+are rejected unless ALLOW-DUPLICATE-KEYS is true; then the first value wins.
 Return true and NIL for a valid record, otherwise NIL and a reason."
   (block check
     (flet ((fail (reason &rest arguments)
              (let ((*print-circle* t))
                (return-from check
                  (values nil (apply #'format nil reason arguments))))))
-      (unless (and (consp form) (eq (first form) tag))
+      (unless (or properties-p (and (consp form) (eq (first form) tag)))
         (fail "the form is not a ~S record" tag))
-      (let ((properties (rest form)))
+      (let ((properties (if properties-p form (rest form))))
         (unless (record--property-list-p properties)
           (fail "the record body is not a property list"))
-        (unless allow-duplicate-keys
-          (let ((seen (make-hash-table :test #'eq)))
-            (loop for (indicator value) on properties by #'cddr
-                  do (when (gethash indicator seen)
+        (when (and maximum-length (> (length properties) maximum-length))
+          (fail "the record body exceeds ~D property list elements" maximum-length))
+        (let ((seen (unless allow-duplicate-keys (make-hash-table :test #'eq))))
+          (loop for indicator in properties by #'cddr
+                do (when (and keyword-keys-p (not (keywordp indicator)))
+                     (fail "the property ~S is not a keyword" indicator))
+                   (when seen
+                     (when (gethash indicator seen)
                        (fail "the property ~S is repeated" indicator))
                      (setf (gethash indicator seen) t))))
-        (let ((version (getf properties ':version)))
-          (unless (member version versions :test #'eql)
+        (let ((version (and versions-p (getf properties ':version))))
+          (when (and versions-p (not (member version versions :test #'eql)))
             (fail "record version ~S is not supported" version))
           (dolist (field fields)
             (let* ((indicator (getf field ':indicator))
@@ -84,7 +90,7 @@ Return true and NIL for a valid record, otherwise NIL and a reason."
                    (present-p (record--present-p properties indicator)))
               (when (and (not present-p)
                          (or (eq required t)
-                             (member version required :test #'eql)))
+                             (and versions-p (member version required :test #'eql))))
                 (fail "the required property ~S is missing" indicator))
               (when (and present-p
                          validate
@@ -99,7 +105,7 @@ Return true and NIL for a valid record, otherwise NIL and a reason."
             (do ((tail properties (cddr tail)))
                 ((null tail))
               (let ((indicator (first tail)))
-                (unless (or (eq indicator ':version)
+                (unless (or (and versions-p (eq indicator ':version))
                             (member indicator fields
                                     :key (lambda (field)
                                            (getf field ':indicator))))

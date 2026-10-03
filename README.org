@@ -41,10 +41,11 @@ again after loading the log following an interrupted write.
 All reads bind =*read-eval*= to =nil=. Logs are for one serialized writer and
 any number of readers.
 
-* Versioned records
+* Property records
 
-A record is one form shaped =(TAG :version VERSION . PROPERTIES)=. Field
-descriptions replace hand-rolled validators:
+Validate tagged forms shaped =(TAG . PROPERTIES)= with =record-check=. Supply
+=:versions= for versioned records shaped =(TAG :version VERSION . PROPERTIES)=.
+Field descriptions replace hand-written validators:
 
 #+BEGIN_SRC lisp
 (sexp-store:snapshot-write
@@ -67,9 +68,14 @@ descriptions replace hand-rolled validators:
 
 - =:required= lists the versions that must carry the property, or =t= for all
 - =:validate= is applied to present values only
-- =:allow-other-keys nil= rejects properties beyond =:version= and the
-  described fields
+- =:allow-other-keys nil= rejects undescribed fields; =:version= is implicitly
+  allowed only when =:versions= is supplied
 - =record-check= validates an in-memory form and returns a reason on failure
+- Omit =:versions= to validate unversioned records. An explicit =:versions nil=
+  accepts no version.
+- Pass =:properties-p t= to validate a property list directly, without a tag.
+- =:keyword-keys-p t= requires keyword indicators; =:maximum-length= bounds
+  plist elements, counting both indicators and values.
 - =record-version=, =record-property=, and =record-property-present-p= read
   validated forms without =getf= pitfalls on malformed input
 
