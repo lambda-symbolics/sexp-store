@@ -23,6 +23,12 @@ Snapshot publication writes a complete temporary file beside the target and
 renames it over the target. The default Unix mode is =0600= on supported POSIX
 environments. Pass =:mode nil= when permissions are managed separately.
 
+Use =snapshot-write-text= for exact UTF-8 text and =snapshot-write-octets= for
+an unsigned-byte vector. Both use exclusively created staging files beside
+the target, private unless =:mode nil=, and accept =:require-absent=. Create-only writes
+signal =publication-conflict= if any target entry already exists. Replacement
+writes require caller-side writer serialization, as with =snapshot-write=.
+
 * Append logs
 
 #+BEGIN_SRC lisp

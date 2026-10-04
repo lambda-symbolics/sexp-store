@@ -264,6 +264,49 @@ when replacing an existing file. FORMS must be a finite proper list."
              :mode mode
              :require-absent require-absent))
 
+(defun snapshot-write-octets (pathname octets &key (mode #o600) require-absent)
+  "Atomically publish the unsigned-byte vector OCTETS at PATHNAME.
+
+MODE defaults to private permissions. When REQUIRE-ABSENT is true, an existing
+target signals PUBLICATION-CONFLICT instead of being replaced."
+  (unless (typep octets '(vector (unsigned-byte 8)))
+    (store--fail ':validate pathname "OCTETS must be a vector of unsigned bytes."))
+  (let ((temporary nil))
+    (unwind-protect
+         (handler-case
+             (progn
+               (files--ensure-directories pathname #o700)
+               (setf temporary (files--stage pathname octets mode (make-random-state t)))
+               (files--install temporary pathname (not require-absent))
+               pathname)
+           (store-error (condition)
+             (error condition))
+           (error (cause)
+             (store--fail ':publish pathname "Could not publish an octet snapshot." cause)))
+      (when (and temporary (probe-file temporary))
+        (ignore-errors
+          (store--make-replaceable temporary)
+          (delete-file temporary))))))
+
+(defun snapshot-write-text (pathname text &key (mode #o600) require-absent)
+  "UTF-8 encode TEXT and atomically publish it at PATHNAME.
+
+MODE defaults to private permissions. When REQUIRE-ABSENT is true, an existing
+target signals PUBLICATION-CONFLICT instead of being replaced."
+  (unless (stringp text)
+    (store--fail ':validate pathname "TEXT must be a string."))
+  (handler-case
+      (snapshot-write-octets pathname
+                             (ls-compat:utf8-string-to-octets text)
+                             :mode mode
+                             :require-absent require-absent)
+    (store-error (condition)
+      (error condition))
+    (error (cause)
+      (store--fail ':write pathname
+                   "Could not encode or publish text."
+                   cause))))
+
 (defun log-append
     (pathname form &key initial-forms (mode #o600) (repair-tail-p t))
   "Append one complete FORM to PATHNAME, atomically creating or repairing it.

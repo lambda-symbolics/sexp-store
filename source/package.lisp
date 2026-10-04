@@ -35,6 +35,8 @@
            #:snapshot-read
            #:snapshot-read-record
            #:snapshot-write
+           #:snapshot-write-text
+           #:snapshot-write-octets
            #:store-error
            #:store-error-message
            #:store-error-cause

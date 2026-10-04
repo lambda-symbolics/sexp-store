@@ -334,6 +334,7 @@
     (unwind-protect
          (progn
            (tests--snapshots root)
+           (tests--raw-snapshots root)
            (tests--logs root)
            (tests--records root)
            (tests--property-records)

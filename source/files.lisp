@@ -136,7 +136,7 @@ files."
     created))
 
 (defun files--stage (target octets mode random-state)
-  "Write OCTETS to a new private staging file beside TARGET and return its pathname."
+  "Write OCTETS beside TARGET with private staging unless MODE is NIL."
   (loop
     ;; MAKE-PATHNAME keeps a target directory holding wildcard characters
     ;; literal, which parsing a namestring would not.
@@ -156,13 +156,22 @@ files."
                         (store--fail ':write pathname
                                      "Could not create a staging file." cause)))))
         (when stream
-          (unwind-protect
-               (progn
-                 (store--set-mode pathname mode)
-                 (write-sequence octets stream)
-                 (finish-output stream))
-            (close stream))
-          (return pathname))))))
+          (let ((complete-p nil))
+            (unwind-protect
+                 (progn
+                   (when mode
+                     (store--set-mode pathname #o600))
+                   (write-sequence octets stream)
+                   (finish-output stream)
+                   (close stream)
+                   (store--set-mode pathname mode)
+                   (setf complete-p t))
+              (ignore-errors (close stream))
+              (unless complete-p
+                (ignore-errors
+                  (store--make-replaceable pathname)
+                  (delete-file pathname))))
+            (return pathname)))))))
 
 (defun files--current-octets (pathname)
   "Return PATHNAME's complete contents, or NIL when it does not exist."
