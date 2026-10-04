@@ -54,13 +54,18 @@
    (encoder
     :initarg :encoder
     :reader snapshot-store-encoder
-    :documentation "A function encoding replacement state as one readable record."))
+    :documentation "A function encoding replacement state as one readable record.")
+   (recover-read-error
+    :initarg :recover-read-error
+    :initform nil
+    :reader snapshot-store-recover-read-error
+    :documentation "An optional function of STORE-ERROR returning fresh replacement state; NIL propagates read failures."))
   (:documentation "Exactly one validated record, replaced as a single publication."))
 
 (defgeneric store--read (store)
-  (:documentation "Return fresh state, complete source forms, and tail status."))
+  (:documentation "Return fresh state, source forms, tail status, and whether an unreadable snapshot is being replaced."))
 
-(defgeneric store--publish (store &key state change forms)
+(defgeneric store--publish (store &key state change forms replace-existing-p)
   (:documentation "Validate and persist CHANGE, returning the published state."))
 
 (defun record-finite-p (form)
@@ -146,16 +151,27 @@ and application field predicates, so neither receives circular or dotted data."
 
 (defmethod store--read ((store snapshot-store))
   (if (probe-file (transaction-store-pathname store))
-      (multiple-value-bind (form sole-form-p)
-          (snapshot-read (transaction-store-pathname store))
-        (unless sole-form-p
-          (store--fail ':validate (transaction-store-pathname store)
-                       "The snapshot must hold exactly one complete form."))
-        (store--validate-record store form (transaction-store-validator store))
-        (values (funcall (snapshot-store-decoder store) form) (list form) nil))
-      (values (funcall (transaction-store-initial-state store)) nil nil)))
+      (multiple-value-bind (value recovered-p)
+          (handler-case
+              (multiple-value-bind (form sole-form-p)
+                  (snapshot-read (transaction-store-pathname store))
+                (unless sole-form-p
+                  (store--fail ':validate (transaction-store-pathname store)
+                               "The snapshot must hold exactly one complete form."))
+                (store--validate-record store form (transaction-store-validator store))
+                (values form nil))
+            (store-error (condition)
+              (let ((recover (snapshot-store-recover-read-error store)))
+                (if recover
+                    (values (funcall recover condition) t)
+                    (error condition)))))
+        (if recovered-p
+            (values value nil nil t)
+            (values (funcall (snapshot-store-decoder store) value) (list value) nil nil)))
+      (values (funcall (transaction-store-initial-state store)) nil nil nil)))
 
-(defmethod store--publish ((store log-store) &key state change forms)
+(defmethod store--publish ((store log-store) &key state change forms replace-existing-p)
+  (declare (ignore replace-existing-p))
   (unless (and (record-finite-p change)
                (handler-case (integerp (list-length change))
                  (type-error () nil)))
@@ -174,11 +190,12 @@ and application field predicates, so neither receives circular or dotted data."
                               :require-absent require-absent))
   state)
 
-(defmethod store--publish ((store snapshot-store) &key state change forms)
+(defmethod store--publish ((store snapshot-store) &key state change forms replace-existing-p)
   (declare (ignore state))
   (let ((form (funcall (snapshot-store-encoder store) change)))
     (store--validate-record store form (transaction-store-validator store))
-    (store--write-transaction store (list form) :require-absent (null forms)))
+    (store--write-transaction store (list form)
+                              :require-absent (not (or forms replace-existing-p))))
   change)
 
 (defun store--write-transaction (store forms &key require-absent)
@@ -216,8 +233,9 @@ and application field predicates, so neither receives circular or dotted data."
 Read under STORE's advisory lock. LOCK-HELD-P is true only when the caller already
 holds that same lock as part of a larger coordinated operation. Missing files
 produce INITIAL-STATE; existing empty files and malformed complete forms signal
-STORE-ERROR. Incomplete log tails are ignored without modifying any bytes.
-Callback errors propagate."
+STORE-ERROR unless SNAPSHOT-STORE's explicit RECOVER-READ-ERROR callback supplies
+fresh replacement state. Recovery alone does not rewrite the file. Incomplete
+log tails are ignored without modifying bytes. Callback errors propagate."
   (flet ((read-state ()
            (multiple-value-bind (state forms incomplete-p) (store--read store)
              (declare (ignore forms))
@@ -243,12 +261,13 @@ and does not roll back durable state."
   (store--call-with-lock
    store
    (lambda ()
-     (multiple-value-bind (state forms incomplete-p) (store--read store)
+      (multiple-value-bind (state forms incomplete-p replace-existing-p) (store--read store)
        (declare (ignore incomplete-p))
        (multiple-value-bind (change result write-p)
            (funcall update (store-read store :lock-held-p t))
          (when write-p
-           (setf state (store--publish store :state state :change change :forms forms)))
+            (setf state (store--publish store :state state :change change :forms forms
+                                       :replace-existing-p replace-existing-p)))
          (let ((committed (store--finalize store state)))
            (when publish
              (funcall publish committed))

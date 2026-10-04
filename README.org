@@ -114,6 +114,14 @@ replacement state. A log batch is validated and published in one operation,
 including removal of an incomplete final form. Existing empty or malformed
 files are errors, rather than missing stores.
 
+A =snapshot-store= may supply =:recover-read-error=, a function of =store-error=
+that returns fresh fallback state. Recovery during a read or read-only
+transaction leaves the original bytes untouched. A writing transaction validates
+its replacement and overwrites the unreadable snapshot. Without this callback,
+read failures propagate. Recovery callback errors propagate unchanged.
+The callback may run separately for the committed base and the updater's private
+working state within a transaction; return a fresh independent value each time.
+
 #+BEGIN_SRC lisp
 (sexp-store:store-transact
  store

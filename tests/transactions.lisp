@@ -30,13 +30,14 @@
           (remhash id state))))
      state)))
 
-(defun tests--transaction-snapshot (root)
+(defun tests--transaction-snapshot (root &key recover-read-error)
   "Return a generic list-valued snapshot store beneath ROOT."
   (make-instance
    'sexp-store:snapshot-store
    :pathname (merge-pathnames "transaction-snapshot.sexp" root)
    :lock-pathname (merge-pathnames "transaction-snapshot.lock" root)
    :initial-state (constantly nil)
+   :recover-read-error recover-read-error
    :validator
    (lambda (form)
      (sexp-store:record-check
@@ -359,6 +360,78 @@
                           "a permission failure precedes append publication"))
         (setf (symbol-function 'sexp-store::store--set-mode) original)))))
 
+(defun tests--snapshot-recovery (root)
+  "Exercise explicit snapshot recovery without read-side publication."
+  (let* ((pathname (merge-pathnames "transaction-snapshot.sexp" root))
+         (caught nil)
+         (store (tests--transaction-snapshot
+                 root :recover-read-error
+                 (lambda (condition)
+                   (setf caught condition)
+                   (list ':recovered)))))
+    (dolist (source '("(:entries :version 99 :items nil)" "(:entries :version"
+                      "(:entries :version 1 :items nil) (:extra)"))
+      (tests--write-text pathname source)
+      (test-assert (signals store-error
+                     (sexp-store:store-read (tests--transaction-snapshot root)))
+                   "unconfigured snapshot recovery propagates corruption")
+      (test-assert (and (equal (sexp-store:store-read store) '(:recovered))
+                        (typep caught 'store-error)
+                        (string= source (uiop:read-file-string pathname)))
+                   "explicit recovery returns fresh state without rewriting corrupt input")
+      (sexp-store:store-transact store
+                                (lambda (state) (values state nil nil)))
+      (test-assert (string= source (uiop:read-file-string pathname))
+                   "read-only recovered transactions preserve the original snapshot")
+      (sexp-store:store-transact store
+                                (lambda (state)
+                                  (values (append state '(1)) ':replaced t)))
+      (test-assert (equal (sexp-store:store-read (tests--transaction-snapshot root))
+                          '(:recovered 1))
+                   "a writing recovered transaction validates and replaces corrupt state"))
+    (tests--write-text pathname "(:unsupported)")
+    (let ((condition (make-condition 'simple-error :format-control "Recovery declined.")))
+      (test-assert
+       (handler-case
+           (progn (sexp-store:store-read
+                   (tests--transaction-snapshot root
+                     :recover-read-error (lambda (cause)
+                                           (declare (ignore cause))
+                                           (error condition))))
+                  nil)
+         (simple-error (caught) (eq caught condition)))
+       "recovery callback failures propagate unchanged"))
+    (test-assert (signals store-error
+                   (sexp-store:store-transact store
+                     (lambda (state)
+                       (declare (ignore state))
+                       (values 42 nil t))))
+                 "recovery does not bypass replacement validation")
+    (test-assert (string= (uiop:read-file-string pathname) "(:unsupported)")
+                 "invalid recovered replacement leaves the original bytes untouched"))
+  (let* ((store (tests--transaction-snapshot
+                 (merge-pathnames "callback-errors/" root)
+                 :recover-read-error (constantly '(:recovered))))
+         (pathname (sexp-store::transaction-store-pathname store))
+         (condition (make-condition 'store-error :pathname pathname
+                                    :operation ':read :message "Callback failed.")))
+    (setf (slot-value store 'sexp-store::initial-state)
+          (lambda () (error condition)))
+    (test-assert
+     (handler-case (progn (sexp-store:store-read store) nil)
+       (store-error (caught) (eq caught condition)))
+     "a missing-store factory failure does not enter snapshot recovery")
+    (test-assert (not (probe-file pathname))
+                 "a failing initial-state factory publishes no snapshot")
+    (snapshot-write pathname '(:entries :version 1 :items nil))
+    (setf (slot-value store 'sexp-store::decoder)
+          (lambda (form) (declare (ignore form)) (error condition)))
+    (test-assert
+     (handler-case (progn (sexp-store:store-read store) nil)
+       (store-error (caught) (eq caught condition)))
+     "decoder callback failures propagate instead of recovering valid input"))
+  nil)
+
 (defun tests--transactions (root)
   "Run the generic log-fold and locked transaction checks beneath ROOT."
   (tests--transaction-replay root)
@@ -367,6 +440,7 @@
   (tests--transaction-snapshots root)
   (tests--transaction-working-state root)
   (tests--transaction-permissions root)
+  (tests--snapshot-recovery (merge-pathnames "recovery/" root))
   (tests--transaction-process-lock
    (tests--transaction-snapshot root)
    (merge-pathnames "transaction-snapshot.lock" root))
