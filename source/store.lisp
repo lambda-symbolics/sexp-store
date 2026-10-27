@@ -275,7 +275,9 @@ target signals PUBLICATION-CONFLICT instead of being replaced."
          (handler-case
              (progn
                (files--ensure-directories pathname #o700)
-               (setf temporary (files--stage pathname octets mode (make-random-state t)))
+               (setf temporary (files--stage pathname octets
+                                                 :mode         mode
+                                                 :random-state (make-random-state t)))
                (files--install temporary pathname (not require-absent))
                pathname)
            (store-error (condition)

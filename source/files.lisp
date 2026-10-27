@@ -55,10 +55,14 @@ files."
                (let ((entry (list :write write :temporary nil :backup nil)))
                  (push entry staged)
                  (setf (getf entry :temporary)
-                       (files--stage pathname (getf write :octets) mode random-state))
+                       (files--stage pathname (getf write :octets)
+                                     :mode         mode
+                                     :random-state random-state))
                  (when expected
                    (setf (getf entry :backup)
-                         (files--stage pathname expected mode random-state))))))
+                         (files--stage pathname expected
+                                       :mode         mode
+                                       :random-state random-state))))))
            (dolist (entry (reverse staged))
              (let* ((write    (getf entry :write))
                     (pathname (getf write :pathname))
@@ -135,8 +139,10 @@ files."
       (store--set-mode directory directory-mode))
     created))
 
-(defun files--stage (target octets mode random-state)
-  "Write OCTETS beside TARGET with private staging unless MODE is NIL."
+(defun files--stage (target octets &key mode random-state)
+  "Write OCTETS beside TARGET with private staging unless MODE is NIL.
+
+RANDOM-STATE chooses the staging file name."
   (loop
     ;; MAKE-PATHNAME keeps a target directory holding wildcard characters
     ;; literal, which parsing a namestring would not.
