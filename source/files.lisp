@@ -90,10 +90,12 @@ files."
                      (not (find (namestring pathname) rollback-failures
                                 :key  (lambda (failure) (getf failure :backup))
                                 :test #'equal)))
+            ; mallet:suppress no-ignore-errors -- a leftover staging file must not hide the publication result
             (ignore-errors (delete-file pathname)))))
       (unless complete-p
         (dolist (directory (sort (remove-duplicates created :test #'equal)
                                  #'> :key (lambda (pathname) (length (namestring pathname)))))
+          ; mallet:suppress no-ignore-errors -- a directory left behind must not hide the publication failure
           (ignore-errors (uiop:delete-empty-directory directory))))
       (when rollback-failures
         (error 'publication-rollback-failed
@@ -172,8 +174,10 @@ RANDOM-STATE chooses the staging file name."
                    (close stream)
                    (store--set-mode pathname mode)
                    (setf complete-p t))
+              ; mallet:suppress no-ignore-errors -- a failed close must not hide the staging failure
               (ignore-errors (close stream))
               (unless complete-p
+                ; mallet:suppress no-ignore-errors -- a partial staging file must not hide the staging failure
                 (ignore-errors
                   (store--make-replaceable pathname)
                   (delete-file pathname))))

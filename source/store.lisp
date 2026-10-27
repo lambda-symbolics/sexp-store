@@ -285,6 +285,7 @@ target signals PUBLICATION-CONFLICT instead of being replaced."
            (error (cause)
              (store--fail ':publish pathname "Could not publish an octet snapshot." :cause cause)))
       (when (and temporary (probe-file temporary))
+        ; mallet:suppress no-ignore-errors -- a leftover staging file must not hide the publication result
         (ignore-errors
           (store--make-replaceable temporary)
           (delete-file temporary))))))
