@@ -128,6 +128,7 @@ and application field predicates, so neither receives circular or dotted data."
   form)
 
 (defmethod store--read ((store log-store))
+  "Fold the validated header and records of STORE's log into fresh state."
   (let ((state    (funcall (transaction-store-initial-state store)))
         (forms    nil)
         (header-p t))
@@ -150,6 +151,7 @@ and application field predicates, so neither receives circular or dotted data."
       (values state (nreverse forms) incomplete-p))))
 
 (defmethod store--read ((store snapshot-store))
+  "Decode STORE's validated snapshot, or recover from a read failure when STORE allows it."
   (if (probe-file (transaction-store-pathname store))
       (multiple-value-bind (value recovered-p)
           (handler-case
@@ -171,6 +173,9 @@ and application field predicates, so neither receives circular or dotted data."
       (values (funcall (transaction-store-initial-state store)) nil nil nil)))
 
 (defmethod store--publish ((store log-store) &key state change forms replace-existing-p)
+  "Publish FORMS and the CHANGE records, and return STATE with CHANGE folded in.
+
+Empty FORMS start a new log with STORE's header."
   (declare (ignore replace-existing-p))
   (unless (and (record-finite-p change)
                (handler-case (integerp (list-length change))
@@ -191,6 +196,7 @@ and application field predicates, so neither receives circular or dotted data."
   state)
 
 (defmethod store--publish ((store snapshot-store) &key state change forms replace-existing-p)
+  "Replace STORE's snapshot with the encoded CHANGE and return CHANGE."
   (declare (ignore state))
   (let ((form (funcall (snapshot-store-encoder store) change)))
     (store--validate-record store form (transaction-store-validator store))
@@ -213,9 +219,11 @@ and application field predicates, so neither receives circular or dotted data."
   (:documentation "Return the application-facing value of fresh STATE."))
 
 (defmethod store--finalize ((store log-store) state)
+  "Convert folded STATE with STORE's finalizer."
   (funcall (log-store-finalizer store) state))
 
 (defmethod store--finalize ((store snapshot-store) state)
+  "Return STATE unchanged."
   state)
 
 (defun store--call-with-lock (store function)
