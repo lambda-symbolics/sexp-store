@@ -1,4 +1,5 @@
 (defpackage #:sexp-store
+  (:documentation "Readable state files with atomic snapshots, append logs, records, and transactions.")
   (:use #:cl)
   (:export #:log-append
            #:plist-schema-p
@@ -47,6 +48,7 @@
            #:publication-rollback-failed-failures))
 
 (defpackage #:sexp-store/tests
+  (:documentation "Tests for sexp-store.")
   (:use #:cl)
   (:import-from #:sexp-store
                 #:log-append
