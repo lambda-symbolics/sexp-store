@@ -111,7 +111,7 @@ and application field predicates, so neither receives circular or dotted data."
        (consp form)
        (keywordp (first form))
        (record--property-list-p (rest form))
-       (loop for (key value) on (rest form) by #'cddr always (keywordp key))
+       (loop for key in (rest form) by #'cddr always (keywordp key))
        (record-check form :tag (first form) :versions (list (record-version form))
                           :allow-duplicate-keys (eq duplicate-keys ':first))
        t))
