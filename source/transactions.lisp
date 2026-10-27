@@ -207,7 +207,7 @@ and application field predicates, so neither receives circular or dotted data."
       (error cause))
     (error (cause)
       (store--fail ':publish (transaction-store-pathname store)
-                   "Could not publish the state transaction." cause))))
+                   "Could not publish the state transaction." :cause cause))))
 
 (defgeneric store--finalize (store state)
   (:documentation "Return the application-facing value of fresh STATE."))
@@ -225,7 +225,7 @@ and application field predicates, so neither receives circular or dotted data."
        (transaction-store-lock-pathname store) function)
     (ls-flock:file-lock-error (cause)
       (store--fail ':lock (transaction-store-lock-pathname store)
-                   "Could not acquire the state transaction lock." cause))))
+                   "Could not acquire the state transaction lock." :cause cause))))
 
 (defun store-read (store &key lock-held-p)
   "Return validated fresh state and whether a log has an incomplete final form.

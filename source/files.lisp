@@ -154,7 +154,7 @@ files."
                               :if-does-not-exist :create)
                       (error (cause)
                         (store--fail ':write pathname
-                                     "Could not create a staging file." cause)))))
+                                     "Could not create a staging file." :cause cause)))))
         (when stream
           (let ((complete-p nil))
             (unwind-protect

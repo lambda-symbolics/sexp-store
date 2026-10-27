@@ -36,7 +36,7 @@
   (:documentation
    "A target required to be absent appeared during atomic publication."))
 
-(defun store--fail (operation pathname message &optional cause)
+(defun store--fail (operation pathname message &key cause)
   "Signal a STORE-ERROR for OPERATION on PATHNAME."
   (error 'store-error
          :message   message
@@ -71,7 +71,7 @@ MAXIMUM-OCTETS bounds that capture. Reader errors are wrapped in STORE-ERROR."
     (error (cause)
       (store--fail ':read pathname
                    (format nil "Could not read a state snapshot: ~A" cause)
-                   cause))))
+                   :cause cause))))
 
 (defun log-map (function pathname &key (start-position 0))
   "Call FUNCTION for each complete form in PATHNAME from START-POSITION.
@@ -99,7 +99,7 @@ A missing file is empty only at position zero."
             (error (cause)
               (store--fail ':read pathname
                            (format nil "Could not open a readable log: ~A" cause)
-                           cause)))))
+                           :cause cause)))))
     (unwind-protect
          (let ((*read-eval* nil)
                (end-marker  (cons nil nil))
@@ -114,7 +114,7 @@ A missing file is empty only at position zero."
                (store--fail ':read pathname
                             (format nil "Could not seek in a readable log: ~A"
                                     cause)
-                            cause)))
+                            :cause cause)))
            (loop
              for form-start =
                (handler-case
@@ -124,7 +124,7 @@ A missing file is empty only at position zero."
                     ':read pathname
                     (format nil "Could not locate a readable log form: ~A"
                             cause)
-                    cause)))
+                    :cause cause)))
              do
                (let ((form
                        (handler-case
@@ -136,13 +136,13 @@ A missing file is empty only at position zero."
                             ':read pathname
                             (format nil "Malformed readable log data: ~A"
                                     cause)
-                            cause))
+                            :cause cause))
                          (stream-error (cause)
                            (store--fail
                             ':read pathname
                             (format nil "Could not read a readable log: ~A"
                                     cause)
-                            cause)))))
+                            :cause cause)))))
                  (when (eq form end-marker)
                    (return
                      (values
@@ -178,7 +178,7 @@ Malformed complete input signals STORE-ERROR."
       (error (cause)
         (store--fail ':permissions pathname
                      (format nil "Could not set file mode ~O: ~A" mode cause)
-                     cause))))
+                     :cause cause))))
   pathname)
 
 (defun store--write-forms (pathname forms &key append mode)
@@ -203,7 +203,7 @@ Malformed complete input signals STORE-ERROR."
     (error (cause)
       (store--fail ':write pathname
                    (format nil "Could not write readable state: ~A" cause)
-                   cause)))
+                   :cause cause)))
   pathname)
 
 (defun store--publish-exclusive (temporary pathname)
@@ -216,7 +216,7 @@ Malformed complete input signals STORE-ERROR."
              :operation ':publish :pathname pathname :cause cause))
     (error (cause)
       (store--fail ':publish pathname
-                   "Could not exclusively publish readable state." cause)))
+                   "Could not exclusively publish readable state." :cause cause)))
   pathname)
 
 (defun store--make-replaceable (pathname)
@@ -281,7 +281,7 @@ target signals PUBLICATION-CONFLICT instead of being replaced."
            (store-error (condition)
              (error condition))
            (error (cause)
-             (store--fail ':publish pathname "Could not publish an octet snapshot." cause)))
+             (store--fail ':publish pathname "Could not publish an octet snapshot." :cause cause)))
       (when (and temporary (probe-file temporary))
         (ignore-errors
           (store--make-replaceable temporary)
@@ -304,7 +304,7 @@ target signals PUBLICATION-CONFLICT instead of being replaced."
     (error (cause)
       (store--fail ':write pathname
                    "Could not encode or publish text."
-                   cause))))
+                   :cause cause))))
 
 (defun log-append
     (pathname form &key initial-forms (mode #o600) (repair-tail-p t))
