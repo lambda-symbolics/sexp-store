@@ -4,61 +4,61 @@
 
 (defclass transactional-store ()
   ((pathname
-    :initarg :pathname
-    :reader transaction-store-pathname
+    :initarg       :pathname
+    :reader        transaction-store-pathname
     :documentation "The authoritative readable state pathname.")
    (lock-pathname
-    :initarg :lock-pathname
-    :reader transaction-store-lock-pathname
+    :initarg       :lock-pathname
+    :reader        transaction-store-lock-pathname
     :documentation "The stable adjacent advisory lock pathname.")
    (initial-state
-    :initarg :initial-state
-    :reader transaction-store-initial-state
+    :initarg       :initial-state
+    :reader        transaction-store-initial-state
     :documentation "A zero-argument function returning fresh empty state.")
    (validator
-    :initarg :validator
-    :reader transaction-store-validator
+    :initarg       :validator
+    :reader        transaction-store-validator
     :documentation "A predicate validating one complete data form.")
    (duplicate-keys
-    :initarg :duplicate-keys
-    :initform ':reject
-    :reader transaction-store-duplicate-keys
+    :initarg       :duplicate-keys
+    :initform      ':reject
+    :reader        transaction-store-duplicate-keys
     :documentation "Either :REJECT repeated record keys or use their :FIRST value."))
   (:documentation "Paths and application callbacks for locked readable state."))
 
 (defclass log-store (transactional-store)
   ((header
-    :initarg :header
-    :reader log-store-header
+    :initarg       :header
+    :reader        log-store-header
     :documentation "The complete header used when creating a log.")
    (header-validator
-    :initarg :header-validator
-    :reader log-store-header-validator
+    :initarg       :header-validator
+    :reader        log-store-header-validator
     :documentation "A predicate accepting supported complete headers.")
    (reducer
-    :initarg :reducer
-    :reader log-store-reducer
+    :initarg       :reducer
+    :reader        log-store-reducer
     :documentation "A function of fresh state and record returning next state.")
    (finalizer
-    :initarg :finalizer
-    :initform #'identity
-    :reader log-store-finalizer
+    :initarg       :finalizer
+    :initform      #'identity
+    :reader        log-store-finalizer
     :documentation "A function converting folded state to the public state value."))
   (:documentation "A header followed by validated events folded into fresh state."))
 
 (defclass snapshot-store (transactional-store)
   ((decoder
-    :initarg :decoder
-    :reader snapshot-store-decoder
+    :initarg       :decoder
+    :reader        snapshot-store-decoder
     :documentation "A function decoding a validated snapshot into fresh state.")
    (encoder
-    :initarg :encoder
-    :reader snapshot-store-encoder
+    :initarg       :encoder
+    :reader        snapshot-store-encoder
     :documentation "A function encoding replacement state as one readable record.")
    (recover-read-error
-    :initarg :recover-read-error
-    :initform nil
-    :reader snapshot-store-recover-read-error
+    :initarg       :recover-read-error
+    :initform      nil
+    :reader        snapshot-store-recover-read-error
     :documentation "An optional function of STORE-ERROR returning fresh replacement state; NIL propagates read failures."))
   (:documentation "Exactly one validated record, replaced as a single publication."))
 
@@ -74,7 +74,7 @@
 Inspect conses and arrays without recursive calls or printing malformed input.
 Opaque objects are not portable record data. Symbols, numbers, characters,
 strings, and pathnames are leaves."
-  (let ((colors (make-hash-table :test #'eq))
+  (let ((colors  (make-hash-table :test #'eq))
         (pending (list (cons form nil))))
     (loop while pending
           for entry = (pop pending)
@@ -128,8 +128,8 @@ and application field predicates, so neither receives circular or dotted data."
   form)
 
 (defmethod store--read ((store log-store))
-  (let ((state (funcall (transaction-store-initial-state store)))
-        (forms nil)
+  (let ((state    (funcall (transaction-store-initial-state store)))
+        (forms    nil)
         (header-p t))
     (multiple-value-bind (position incomplete-p count)
         (log-map

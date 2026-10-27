@@ -6,9 +6,9 @@
   "Return a generic replacement/tombstone event store beneath ROOT."
   (make-instance
    'sexp-store:log-store
-   :pathname (merge-pathnames "transaction-log.sexp" root)
-   :lock-pathname (merge-pathnames "transaction-log.lock" root)
-   :header '(:entries :version 1)
+   :pathname         (merge-pathnames "transaction-log.sexp" root)
+   :lock-pathname    (merge-pathnames "transaction-log.lock" root)
+   :header           '(:entries :version 1)
    :header-validator (lambda (form)
                        (sexp-store:record-check form :tag ':entries :versions '(1)))
    :validator
@@ -17,9 +17,9 @@
           (sexp-store:record-check
            form :tag (first form) :versions '(1)
            :allow-duplicate-keys (eq duplicate-keys ':first)
-           :fields (list (list :indicator ':id :validate #'stringp :required t)))))
-   :duplicate-keys duplicate-keys
-   :initial-state (lambda () (make-hash-table :test #'equal))
+           :fields               (list (list :indicator ':id :validate #'stringp :required t)))))
+   :duplicate-keys   duplicate-keys
+   :initial-state    (lambda () (make-hash-table :test #'equal))
    :reducer
    (lambda (state record)
      (let ((id (sexp-store:record-property record ':id)))
@@ -34,17 +34,17 @@
   "Return a generic list-valued snapshot store beneath ROOT."
   (make-instance
    'sexp-store:snapshot-store
-   :pathname (merge-pathnames "transaction-snapshot.sexp" root)
-   :lock-pathname (merge-pathnames "transaction-snapshot.lock" root)
-   :initial-state (constantly nil)
+   :pathname           (merge-pathnames "transaction-snapshot.sexp" root)
+   :lock-pathname      (merge-pathnames "transaction-snapshot.lock" root)
+   :initial-state      (constantly nil)
    :recover-read-error recover-read-error
    :validator
    (lambda (form)
      (sexp-store:record-check
       form :tag ':entries :versions '(1)
       :fields (list (list :indicator ':items :required t :validate #'listp))))
-   :decoder (lambda (form) (sexp-store:record-property form ':items))
-   :encoder (lambda (state) (list :entries :version 1 :items state))))
+   :decoder            (lambda (form) (sexp-store:record-property form ':items))
+   :encoder            (lambda (state) (list :entries :version 1 :items state))))
 
 (defun tests--transaction-events (store records &key publish)
   "Commit RECORDS to STORE and return the transaction's result."
@@ -56,7 +56,7 @@
 
 (defun tests--transaction-replay (root)
   "Exercise replay, batch publication, incomplete tails, and tombstones."
-  (let* ((store (tests--transaction-log root))
+  (let* ((store    (tests--transaction-log root))
          (pathname (merge-pathnames "transaction-log.sexp" root)))
     (test-assert (zerop (hash-table-count (sexp-store:store-read store)))
                  "missing logs fold from fresh empty state")
@@ -88,7 +88,7 @@
               (setf published t))))
        "transactions return the updater's result")
       (test-assert published "successful transactions publish caller state"))
-    (let ((before (uiop:read-file-string pathname))
+    (let ((before    (uiop:read-file-string pathname))
           (published nil))
       (test-assert
        (signals store-error
@@ -113,7 +113,7 @@
 
 (defun tests--transaction-invalid-records (root)
   "Reject complete malformed input before invoking field predicates or reducers."
-  (let* ((store (tests--transaction-log root))
+  (let* ((store    (tests--transaction-log root))
          (pathname (merge-pathnames "transaction-log.sexp" root)))
     (dolist (text '("" "(:entries :version" "(:wrong :version 1)"
                     "(:entries :version 1 :version 1)"
@@ -141,7 +141,7 @@
      "explicit first-value duplicate policy agrees with record-check")
     (delete-file pathname))
   (let* ((shared (list :shared))
-         (form (list :event :left shared :right shared)))
+         (form   (list :event :left shared :right shared)))
     (test-assert (sexp-store:record-shape-p form)
                  "finite records may share substructure"))
   (test-assert (sexp-store:record-finite-p (make-list 100000))
@@ -149,22 +149,22 @@
 
 (defun tests--transaction-reducer-failure (root)
   "Require reducer failures to abort a whole batch without publishing state."
-  (let* ((pathname (merge-pathnames "reducer-failure.sexp" root))
+  (let* ((pathname  (merge-pathnames "reducer-failure.sexp" root))
          (condition (make-condition 'simple-error :format-control "reducer failed"))
          (published nil)
          (store
            (make-instance
             'sexp-store:log-store
-            :pathname pathname
-            :lock-pathname (merge-pathnames "reducer-failure.lock" root)
-            :header '(:counter :version 1)
+            :pathname         pathname
+            :lock-pathname    (merge-pathnames "reducer-failure.lock" root)
+            :header           '(:counter :version 1)
             :header-validator (constantly t)
-            :validator (constantly t)
-            :initial-state (constantly 0)
-            :reducer (lambda (state record)
-                       (if (eq (first record) ':fail)
-                           (error condition)
-                           (1+ state))))))
+            :validator        (constantly t)
+            :initial-state    (constantly 0)
+            :reducer          (lambda (state record)
+                                (if (eq (first record) ':fail)
+                                    (error condition)
+                                    (1+ state))))))
     (test-assert
      (handler-case
          (tests--transaction-events
@@ -180,9 +180,9 @@
 
 (defun tests--transaction-snapshots (root)
   "Exercise fresh snapshots, rollback ordering, and exclusive initial creation."
-  (let* ((store (tests--transaction-snapshot root))
+  (let* ((store    (tests--transaction-snapshot root))
          (pathname (merge-pathnames "transaction-snapshot.sexp" root))
-         (visible nil))
+         (visible  nil))
     (flet ((add-item (item)
              (sexp-store:store-transact
               store (lambda (state) (values (append state (list item)) item t))
@@ -193,8 +193,8 @@
       (add-item ':second)
       (test-assert (equal visible '(:first :second))
                    "stale caller snapshots cannot discard another transaction")
-      (let ((original (symbol-function 'sexp-store:log-write))
-            (before (uiop:read-file-string pathname))
+      (let ((original    (symbol-function 'sexp-store:log-write))
+            (before      (uiop:read-file-string pathname))
             (old-visible visible))
         (unwind-protect
              (progn
@@ -223,9 +223,9 @@
 
 (defun tests--transaction-process-lock (store pathname)
   "Require a forked transaction to block and then read the latest state."
-  (let ((pid nil)
+  (let ((pid      nil)
         (reaped-p nil)
-        (ready (make-pathname :type "ready" :defaults pathname)))
+        (ready    (make-pathname :type "ready" :defaults pathname)))
     (unwind-protect
          (progn
            (ls-flock:call-with-file-lock
@@ -272,17 +272,17 @@
 (defun tests--transaction-working-state (root)
   "Keep destructive finalizers and updater edits out of committed state."
   (let* ((pathname (merge-pathnames "finalized-log.sexp" root))
-         (store (make-instance
-                 'sexp-store:log-store
-                 :pathname pathname
-                 :lock-pathname (merge-pathnames "finalized-log.lock" root)
-                 :header '(:entries :version 1)
-                 :header-validator (constantly t)
-                 :validator (constantly t)
-                 :initial-state (constantly nil)
-                 :reducer (lambda (state record)
-                            (cons (sexp-store:record-property record ':value) state))
-                 :finalizer #'nreverse)))
+         (store    (make-instance
+                    'sexp-store:log-store
+                    :pathname         pathname
+                    :lock-pathname    (merge-pathnames "finalized-log.lock" root)
+                    :header           '(:entries :version 1)
+                    :header-validator (constantly t)
+                    :validator        (constantly t)
+                    :initial-state    (constantly nil)
+                    :reducer          (lambda (state record)
+                                        (cons (sexp-store:record-property record ':value) state))
+                    :finalizer        #'nreverse)))
     (log-write pathname '((:entries :version 1)
                           (:entry :version 1 :value 1)
                           (:entry :version 1 :value 2)))
@@ -319,9 +319,9 @@
 
 (defun tests--transaction-permissions (root)
   "Check permission failures before changing durable records or caller state."
-  (let* ((store (tests--transaction-snapshot (merge-pathnames "permissions/" root)))
-         (pathname (merge-pathnames "permissions/transaction-snapshot.sexp" root))
-         (original (symbol-function 'sexp-store::store--set-mode))
+  (let* ((store     (tests--transaction-snapshot (merge-pathnames "permissions/" root)))
+         (pathname  (merge-pathnames "permissions/transaction-snapshot.sexp" root))
+         (original  (symbol-function 'sexp-store::store--set-mode))
          (published nil))
     (unwind-protect
          (progn
@@ -363,12 +363,12 @@
 (defun tests--snapshot-recovery (root)
   "Exercise explicit snapshot recovery without read-side publication."
   (let* ((pathname (merge-pathnames "transaction-snapshot.sexp" root))
-         (caught nil)
-         (store (tests--transaction-snapshot
-                 root :recover-read-error
-                 (lambda (condition)
-                   (setf caught condition)
-                   (list ':recovered)))))
+         (caught   nil)
+         (store    (tests--transaction-snapshot
+                    root :recover-read-error
+                    (lambda (condition)
+                      (setf caught condition)
+                      (list ':recovered)))))
     (dolist (source '("(:entries :version 99 :items nil)" "(:entries :version"
                       "(:entries :version 1 :items nil) (:extra)"))
       (tests--write-text pathname source)
@@ -409,10 +409,10 @@
                  "recovery does not bypass replacement validation")
     (test-assert (string= (uiop:read-file-string pathname) "(:unsupported)")
                  "invalid recovered replacement leaves the original bytes untouched"))
-  (let* ((store (tests--transaction-snapshot
-                 (merge-pathnames "callback-errors/" root)
-                 :recover-read-error (constantly '(:recovered))))
-         (pathname (sexp-store::transaction-store-pathname store))
+  (let* ((store     (tests--transaction-snapshot
+                     (merge-pathnames "callback-errors/" root)
+                     :recover-read-error (constantly '(:recovered))))
+         (pathname  (sexp-store::transaction-store-pathname store))
          (condition (make-condition 'store-error :pathname pathname
                                     :operation ':read :message "Callback failed.")))
     (setf (slot-value store 'sexp-store::initial-state)

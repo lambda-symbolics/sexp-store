@@ -75,16 +75,16 @@ The property-list shape and bound are checked before field validation."
             (if allow-other-keys
                 (plist-schema-problem
                  properties
-                 :required-keys required-keys
-                 :keyword-keys-p keyword-keys-p
-                 :maximum-length maximum-length
+                 :required-keys        required-keys
+                 :keyword-keys-p       keyword-keys-p
+                 :maximum-length       maximum-length
                  :allow-duplicate-keys allow-duplicate-keys)
                 (plist-schema-problem
                  properties
-                 :allowed-keys allowed-keys
-                 :required-keys required-keys
-                 :keyword-keys-p keyword-keys-p
-                 :maximum-length maximum-length
+                 :allowed-keys         allowed-keys
+                 :required-keys        required-keys
+                 :keyword-keys-p       keyword-keys-p
+                 :maximum-length       maximum-length
                  :allow-duplicate-keys allow-duplicate-keys))
           (when problem
             (fail "the record property list has problem ~S~@[ at ~S~]"
@@ -94,8 +94,8 @@ The property-list shape and bound are checked before field validation."
             (fail "record version ~S is not supported" version))
           (dolist (field fields)
             (let* ((indicator (getf field ':indicator))
-                   (validate (getf field ':validate))
-                   (required (getf field ':required))
+                   (validate  (getf field ':validate))
+                   (required  (getf field ':required))
                    (present-p (record--present-p properties indicator)))
               (when (and (not present-p)
                          (or (eq required t)

@@ -4,10 +4,10 @@
   "Write raw fixture TEXT to PATHNAME, optionally appending it."
   (ensure-directories-exist pathname)
   (with-open-file (stream pathname
-                          :direction :output
-                          :if-exists (if append :append :supersede)
+                          :direction         :output
+                          :if-exists         (if append :append :supersede)
                           :if-does-not-exist :create
-                          :external-format :utf-8)
+                          :external-format   :utf-8)
     (write-string text stream)
     (finish-output stream))
   nil)
@@ -101,7 +101,7 @@
     (tests--write-text pathname ")\n" :append t)
     (test-assert (signals store-error (log-read pathname))
                  "malformed complete reader input signals STORE-ERROR"))
-  (let ((pathname (merge-pathnames "read-eval.sexp" root))
+  (let ((pathname          (merge-pathnames "read-eval.sexp" root))
         (*read-eval-ran-p* nil))
     (declare (special *read-eval-ran-p*))
     (tests--write-text pathname
@@ -144,23 +144,23 @@
 (defun tests--record-fields ()
   "Return the field descriptions shared by the record tests."
   (list (list :indicator ':name
-              :validate (lambda (value)
-                          (and (stringp value) (plusp (length value))))
-              :required t)
+              :validate  (lambda (value)
+                           (and (stringp value) (plusp (length value))))
+              :required  t)
         (list :indicator ':retries
-              :validate #'integerp
-              :required '(2))
+              :validate  #'integerp
+              :required  '(2))
         (list :indicator ':note
-              :validate #'stringp)))
+              :validate  #'stringp)))
 
 (defun tests--records (root)
   "Exercise versioned record validation beneath ROOT."
   (let ((fields (tests--record-fields)))
     (flet ((check (form &key (allow-other-keys t))
              (record-check form
-                           :tag ':job
-                           :versions '(1 2)
-                           :fields fields
+                           :tag              ':job
+                           :versions         '(1 2)
+                           :fields           fields
                            :allow-other-keys allow-other-keys)))
       (test-assert (equal (make-record ':job 2 ':name "sync")
                           '(:job :version 2 :name "sync"))
@@ -206,18 +206,18 @@
                                             ':retries 3))
       (multiple-value-bind (form version)
           (snapshot-read-record pathname
-                                :tag ':job
+                                :tag      ':job
                                 :versions '(1 2)
-                                :fields fields)
+                                :fields   fields)
         (test-assert (and (= version 2)
                           (equal (record-property form ':name) "sync"))
                      "snapshot records round-trip with their version"))
       (snapshot-write pathname (make-record ':job 3 ':name "sync"))
       (test-assert (signals store-error
                      (snapshot-read-record pathname
-                                           :tag ':job
+                                           :tag      ':job
                                            :versions '(1 2)
-                                           :fields fields))
+                                           :fields   fields))
                    "malformed snapshot records signal STORE-ERROR")))
   nil)
 
@@ -291,7 +291,7 @@
 
 (defun tests--bounded-snapshot-records (root)
   "Exercise storage and schema validation with an explicit bounded data grammar."
-  (let* ((path (merge-pathnames "bounded-record.sexp" root))
+  (let* ((path    (merge-pathnames "bounded-record.sexp" root))
          (grammar (sexp-config:make-source-grammar
                    :label "bounded snapshot" :maximum-depth 4 :maximum-nodes 32
                    :maximum-string-characters 8)))
@@ -300,7 +300,7 @@
      (equal (snapshot-read-record path :grammar grammar :maximum-octets 1024
                                       :properties-p t :keyword-keys-p t
                                       :maximum-length 2
-                                      :fields '((:indicator :name :required t :validate stringp)))
+                                      :fields         '((:indicator :name :required t :validate stringp)))
             '(:name "sync"))
      "bounded snapshot records support unversioned property lists")
     (test-assert
@@ -348,7 +348,7 @@
            (tests--finite-records)
            (tests--files root))
       (uiop:delete-directory-tree root
-                                  :validate t
+                                  :validate          t
                                   :if-does-not-exist :ignore)))
   (format t "~&~:D sexp-store tests passed.~%" *test-count*)
   nil)

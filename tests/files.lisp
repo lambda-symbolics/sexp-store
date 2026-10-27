@@ -29,14 +29,14 @@
 (defun tests--files (root)
   "Exercise transactional multi-file publication beneath ROOT."
   (let* ((directory (merge-pathnames "files/" root))
-         (existing (tests--write-octets (merge-pathnames "existing.txt" directory) "old"))
-         (fresh (merge-pathnames "nested/deeper/fresh.txt" directory)))
+         (existing  (tests--write-octets (merge-pathnames "existing.txt" directory) "old"))
+         (fresh     (merge-pathnames "nested/deeper/fresh.txt" directory)))
     (test-assert
      (= 2 (files-publish (list (list :pathname existing
-                                     :octets (tests--octets "new")
+                                     :octets   (tests--octets "new")
                                      :expected (tests--octets "old"))
                                (list :pathname fresh
-                                     :octets (tests--octets "fresh")
+                                     :octets   (tests--octets "fresh")
                                      :expected nil))))
      "a publication reports every published file")
     (test-assert (and (equalp (tests--file-octets existing) (tests--octets "new"))
@@ -51,7 +51,7 @@
                               (uiop:native-namestring directory)
                               "odd [dir]*/name *?[x].sexp"))))
       (test-assert (and (= 1 (files-publish (list (list :pathname wild
-                                                        :octets (tests--octets "wild")
+                                                        :octets   (tests--octets "wild")
                                                         :expected nil))))
                         (equalp (tests--file-octets wild) (tests--octets "wild")))
                    "targets whose names hold wildcard characters publish literally")
@@ -62,13 +62,13 @@
        (handler-case
            (progn
              (files-publish (list (list :pathname existing
-                                        :octets (tests--octets "newer")
+                                        :octets   (tests--octets "newer")
                                         :expected (tests--octets "new"))
                                   (list :pathname another
-                                        :octets (tests--octets "another")
+                                        :octets   (tests--octets "another")
                                         :expected nil)
                                   (list :pathname fresh
-                                        :octets (tests--octets "lost")
+                                        :octets   (tests--octets "lost")
                                         :expected (tests--octets "not what is there"))))
              nil)
          (publication-conflict ()
@@ -86,7 +86,7 @@
      (handler-case
          (progn
            (files-publish (list (list :pathname existing
-                                      :octets (tests--octets "refused")
+                                      :octets   (tests--octets "refused")
                                       :expected (tests--octets "new")))
                           :check (lambda (pathname)
                                    (declare (ignore pathname))
@@ -101,10 +101,10 @@
        (handler-case
            (progn
              (files-publish (list (list :pathname existing
-                                        :octets (tests--octets "replaced")
+                                        :octets   (tests--octets "replaced")
                                         :expected (tests--octets "new"))
                                   (list :pathname later
-                                        :octets (tests--octets "later")
+                                        :octets   (tests--octets "later")
                                         :expected nil))
                             :check (lambda (pathname)
                                      (incf calls)
@@ -127,14 +127,13 @@
        "a target changed again during rollback is kept and its backup reported")))
   nil)
 
-
 (defun tests--raw-snapshots (root)
   "Exercise text/octet snapshots, exclusive publication, modes and failure cleanup."
   (let* ((directory (merge-pathnames "raw-snapshots/" root))
-         (pathname (merge-pathnames "snapshot.txt" directory))
-         (text (format nil "héllo~%"))
-         (octets (make-array 4 :element-type '(unsigned-byte 8)
-                              :initial-contents '(0 1 128 255))))
+         (pathname  (merge-pathnames "snapshot.txt" directory))
+         (text      (format nil "héllo~%"))
+         (octets    (make-array 4 :element-type    '(unsigned-byte 8)
+                                 :initial-contents '(0 1 128 255))))
     (test-assert (equal (sexp-store:snapshot-write-text pathname text :require-absent t)
                        pathname)
                  "text publication returns its pathname")
@@ -187,7 +186,7 @@
         (setf (symbol-function 'sexp-store::store--set-mode) original)))
     (test-assert (equal (tests--directory-files directory) '("snapshot.txt"))
                  "a staging failure removes the exclusively created temporary file")
-    (let* ((baseline (tests--write-octets (merge-pathnames "mode-reference" directory) ""))
+    (let* ((baseline      (tests--write-octets (merge-pathnames "mode-reference" directory) ""))
            (expected-mode (tests--file-mode baseline)))
       (delete-file baseline)
       (sexp-store:snapshot-write-octets pathname octets :mode nil)

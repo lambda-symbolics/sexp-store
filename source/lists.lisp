@@ -13,9 +13,9 @@ and :MISSING. Validation follows property order; required keys follow
 REQUIRED-KEYS order. An omitted ALLOWED-KEYS accepts any keyword key."
   (block check
     (let ((seen-conses (make-hash-table :test #'eq))
-          (seen-keys (make-hash-table :test #'eq))
-          (tail properties)
-          (count 0))
+          (seen-keys   (make-hash-table :test #'eq))
+          (tail        properties)
+          (count       0))
       (loop while tail
             do (unless (consp tail)
                  (return-from check (values ':improper nil)))

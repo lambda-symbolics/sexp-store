@@ -5,8 +5,8 @@
 (define-condition publication-rollback-failed (store-error)
   ((failures
     :initarg :failures
-    :reader publication-rollback-failed-failures
-    :type list
+    :reader  publication-rollback-failed-failures
+    :type    list
     :documentation
     "One plist per target that could not be restored, holding :PATHNAME,
 :BACKUP (the kept copy of its previous contents, or NIL) and :MESSAGE."))
@@ -37,12 +37,12 @@ before publishing and before restoring, and may signal to refuse it. New files
 get MODE and new directories DIRECTORY-MODE. Return the number of published
 files."
   (files--validate-writes writes)
-  (let ((random-state (make-random-state t))
-        (staged nil)
-        (published nil)
-        (created nil)
-        (complete-p nil)
-        (failure nil)
+  (let ((random-state      (make-random-state t))
+        (staged            nil)
+        (published         nil)
+        (created           nil)
+        (complete-p        nil)
+        (failure           nil)
         (rollback-failures nil))
     (unwind-protect
          (handler-bind ((error (lambda (condition) (setf failure condition))))
@@ -60,15 +60,15 @@ files."
                    (setf (getf entry :backup)
                          (files--stage pathname expected mode random-state))))))
            (dolist (entry (reverse staged))
-             (let* ((write (getf entry :write))
+             (let* ((write    (getf entry :write))
                     (pathname (getf write :pathname))
                     (expected (getf write :expected)))
                (files--check check pathname)
                (unless (equalp expected (files--current-octets pathname))
                  (error 'publication-conflict
-                        :message "The target changed before it could be published."
+                        :message   "The target changed before it could be published."
                         :operation ':publish
-                        :pathname pathname))
+                        :pathname  pathname))
                (files--without-interrupts
                  (lambda ()
                    (files--install (getf entry :temporary) pathname (not (null expected)))
@@ -84,7 +84,7 @@ files."
           (when (and pathname
                      (probe-file pathname)
                      (not (find (namestring pathname) rollback-failures
-                                :key (lambda (failure) (getf failure :backup))
+                                :key  (lambda (failure) (getf failure :backup))
                                 :test #'equal)))
             (ignore-errors (delete-file pathname)))))
       (unless complete-p
@@ -93,12 +93,12 @@ files."
           (ignore-errors (uiop:delete-empty-directory directory))))
       (when rollback-failures
         (error 'publication-rollback-failed
-               :message (format nil "Publication failed (~A) and ~D target~:P could not be restored."
-                                failure (length rollback-failures))
+               :message   (format nil "Publication failed (~A) and ~D target~:P could not be restored."
+                                  failure (length rollback-failures))
                :operation ':rollback
-               :pathname (pathname (getf (first rollback-failures) :pathname))
-               :cause failure
-               :failures rollback-failures)))))
+               :pathname  (pathname (getf (first rollback-failures) :pathname))
+               :cause     failure
+               :failures  rollback-failures)))))
 
 (defun files--validate-writes (writes)
   "Signal a STORE-ERROR unless WRITES is a proper list of complete write plists."
@@ -112,9 +112,9 @@ files."
                                     '(or null (vector (unsigned-byte 8))))))
                       writes))
     (error 'store-error
-           :message "Writes must be plists of :PATHNAME, :OCTETS and :EXPECTED octets."
+           :message   "Writes must be plists of :PATHNAME, :OCTETS and :EXPECTED octets."
            :operation ':validate
-           :pathname #p""))
+           :pathname  #p""))
   writes)
 
 (defun files--check (check pathname)
@@ -141,16 +141,16 @@ files."
     ;; MAKE-PATHNAME keeps a target directory holding wildcard characters
     ;; literal, which parsing a namestring would not.
     (let ((pathname
-            (make-pathname :name (format nil ".sexp-store-~36R"
-                                         (random (expt 36 12) random-state))
-                           :type "staging"
-                           :version nil
+            (make-pathname :name     (format nil ".sexp-store-~36R"
+                                             (random (expt 36 12) random-state))
+                           :type     "staging"
+                           :version  nil
                            :defaults (uiop:pathname-directory-pathname target))))
       (let ((stream (handler-case
                         (open pathname
-                              :direction :output
-                              :element-type '(unsigned-byte 8)
-                              :if-exists nil
+                              :direction         :output
+                              :element-type      '(unsigned-byte 8)
+                              :if-exists         nil
                               :if-does-not-exist :create)
                       (error (cause)
                         (store--fail ':write pathname
@@ -178,7 +178,7 @@ files."
   (when (probe-file pathname)
     (with-open-file (stream pathname :element-type '(unsigned-byte 8))
       (let* ((octets (make-array (file-length stream) :element-type '(unsigned-byte 8)))
-             (count (read-sequence octets stream)))
+             (count  (read-sequence octets stream)))
         (if (= count (length octets))
             octets
             (subseq octets 0 count))))))
@@ -198,24 +198,24 @@ files."
 Return the failures as plists of :PATHNAME, :BACKUP and :MESSAGE."
   (let ((failures nil))
     (dolist (entry published (nreverse failures))
-      (let* ((write (getf entry :write))
+      (let* ((write    (getf entry :write))
              (pathname (getf write :pathname))
-             (backup (getf entry :backup)))
+             (backup   (getf entry :backup)))
         (handler-case
             (progn
               (files--check check pathname)
               (unless (equalp (files--current-octets pathname) (getf write :octets))
                 (error 'publication-conflict
-                       :message "The target changed again after publication, so it was left alone."
+                       :message   "The target changed again after publication, so it was left alone."
                        :operation ':rollback
-                       :pathname pathname))
+                       :pathname  pathname))
               (if backup
                   (files--install backup pathname t)
                   (delete-file pathname)))
           (error (condition)
             (push (list :pathname (namestring pathname)
-                        :backup (and backup (namestring backup))
-                        :message (princ-to-string condition))
+                        :backup   (and backup (namestring backup))
+                        :message  (princ-to-string condition))
                   failures)))))))
 
 (defun files--without-interrupts (function)

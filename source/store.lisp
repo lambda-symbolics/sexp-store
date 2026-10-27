@@ -4,25 +4,25 @@
 
 (define-condition store-error (error)
   ((message
-    :initarg :message
-    :reader store-error-message
-    :type string
+    :initarg       :message
+    :reader        store-error-message
+    :type          string
     :documentation "The human-readable description of the failure.")
    (operation
-    :initarg :operation
-    :reader store-error-operation
-    :type keyword
+    :initarg       :operation
+    :reader        store-error-operation
+    :type          keyword
     :documentation "The storage operation that failed.")
    (pathname
-    :initarg :pathname
-    :reader store-error-pathname
-    :type pathname
+    :initarg       :pathname
+    :reader        store-error-pathname
+    :type          pathname
     :documentation "The state file involved in the failure.")
    (cause
-    :initarg :cause
-    :initform nil
-    :reader store-error-cause
-    :type t
+    :initarg       :cause
+    :initform      nil
+    :reader        store-error-cause
+    :type          t
     :documentation "The underlying condition, when available."))
   (:report
    (lambda (condition stream)
@@ -39,10 +39,10 @@
 (defun store--fail (operation pathname message &optional cause)
   "Signal a STORE-ERROR for OPERATION on PATHNAME."
   (error 'store-error
-         :message message
+         :message   message
          :operation operation
-         :pathname pathname
-         :cause cause))
+         :pathname  pathname
+         :cause     cause))
 
 
 ;;;; -- Reading --
@@ -62,9 +62,9 @@ MAXIMUM-OCTETS bounds that capture. Reader errors are wrapped in STORE-ERROR."
             (when (and maximum-octets (> (file-length stream) maximum-octets))
               (store--fail ':read pathname "The state snapshot exceeds its octet limit."))
             (let* ((*read-eval* nil)
-                   (end-marker (cons nil nil))
-                   (form (read stream nil end-marker))
-                   (extra (read stream nil end-marker)))
+                   (end-marker  (cons nil nil))
+                   (form        (read stream nil end-marker))
+                   (extra       (read stream nil end-marker)))
               (values form (and (not (eq form end-marker)) (eq extra end-marker))))))
     (store-error (condition)
       (error condition))
@@ -94,7 +94,7 @@ A missing file is empty only at position zero."
   (let ((stream
           (handler-case
               (open pathname
-                    :direction :input
+                    :direction       :input
                     :external-format :utf-8)
             (error (cause)
               (store--fail ':read pathname
@@ -102,8 +102,8 @@ A missing file is empty only at position zero."
                            cause)))))
     (unwind-protect
          (let ((*read-eval* nil)
-               (end-marker (cons nil nil))
-               (count 0))
+               (end-marker  (cons nil nil))
+               (count       0))
            (handler-case
                (unless (file-position stream start-position)
                  (store--fail ':read pathname
@@ -126,31 +126,31 @@ A missing file is empty only at position zero."
                             cause)
                     cause)))
              do
-                (let ((form
-                        (handler-case
-                            (read stream nil end-marker)
-                          (end-of-file ()
-                            (return (values form-start t count)))
-                          (reader-error (cause)
-                            (store--fail
-                             ':read pathname
-                             (format nil "Malformed readable log data: ~A"
-                                     cause)
-                             cause))
-                          (stream-error (cause)
-                            (store--fail
-                             ':read pathname
-                             (format nil "Could not read a readable log: ~A"
-                                     cause)
-                             cause)))))
-                  (when (eq form end-marker)
-                    (return
-                      (values
-                       (or (file-position stream) form-start)
-                       nil
-                       count)))
-                  (funcall function form)
-                  (incf count))))
+               (let ((form
+                       (handler-case
+                           (read stream nil end-marker)
+                         (end-of-file ()
+                           (return (values form-start t count)))
+                         (reader-error (cause)
+                           (store--fail
+                            ':read pathname
+                            (format nil "Malformed readable log data: ~A"
+                                    cause)
+                            cause))
+                         (stream-error (cause)
+                           (store--fail
+                            ':read pathname
+                            (format nil "Could not read a readable log: ~A"
+                                    cause)
+                            cause)))))
+                 (when (eq form end-marker)
+                   (return
+                     (values
+                      (or (file-position stream) form-start)
+                      nil
+                      count)))
+                 (funcall function form)
+                 (incf count))))
       (close stream))))
 
 (defun log-read (pathname)
@@ -181,20 +181,19 @@ Malformed complete input signals STORE-ERROR."
                      cause))))
   pathname)
 
-
 (defun store--write-forms (pathname forms &key append mode)
   "Write readable FORMS to PATHNAME, optionally appending them."
   (ensure-directories-exist pathname)
   (handler-case
       (with-open-file (stream pathname
-                              :direction :output
-                              :if-exists (if append :append :supersede)
+                              :direction         :output
+                              :if-exists         (if append :append :supersede)
                               :if-does-not-exist :create
-                              :external-format :utf-8)
+                              :external-format   :utf-8)
         (store--set-mode pathname mode)
-        (let ((*print-circle* t)
+        (let ((*print-circle*   t)
               (*print-readably* t)
-              (*print-pretty* t))
+              (*print-pretty*   t))
           (dolist (form forms)
             (prin1 form stream)
             (terpri stream))
@@ -254,14 +253,14 @@ when replacing an existing file. FORMS must be a finite proper list."
            (store--make-replaceable pathname)
            (uiop:rename-file-overwriting-target temporary pathname))))
    :want-stream-p nil
-   :directory (uiop:pathname-directory-pathname pathname)
-   :prefix (format nil ".~A." (or (pathname-name pathname) "state")))
+   :directory     (uiop:pathname-directory-pathname pathname)
+   :prefix        (format nil ".~A." (or (pathname-name pathname) "state")))
   pathname)
 
 (defun snapshot-write (pathname form &key (mode #o600) require-absent)
   "Atomically publish one readable FORM at PATHNAME."
   (log-write pathname (list form)
-             :mode mode
+             :mode           mode
              :require-absent require-absent))
 
 (defun snapshot-write-octets (pathname octets &key (mode #o600) require-absent)
@@ -298,7 +297,7 @@ target signals PUBLICATION-CONFLICT instead of being replaced."
   (handler-case
       (snapshot-write-octets pathname
                              (ls-compat:utf8-string-to-octets text)
-                             :mode mode
+                             :mode           mode
                              :require-absent require-absent)
     (store-error (condition)
       (error condition))
@@ -324,10 +323,10 @@ Callers must serialize writers."
                 (log-write pathname (append forms (list form)) :mode mode)
                 (store--write-forms pathname (list form)
                                     :append t
-                                    :mode mode)))
+                                    :mode   mode)))
           (store--write-forms pathname (list form) :append t :mode mode))
       (log-write pathname
                  (append (copy-list initial-forms) (list form))
-                 :mode mode
+                 :mode           mode
                  :require-absent t))
   pathname)

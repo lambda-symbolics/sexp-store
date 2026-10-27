@@ -8,7 +8,7 @@
 Combine these attributes with an explicit revision and the source-lock protocol
 of REVISION-WRITE and SIDECAR-REBUILD. Size and date alone cannot distinguish
 same-size edits within one clock tick."
-  (with-open-file (stream pathname :direction ':input
+  (with-open-file (stream pathname :direction   ':input
                                   :element-type '(unsigned-byte 8))
     (values (namestring pathname) (file-length stream)
             (or (file-write-date pathname) 0))))
@@ -93,6 +93,6 @@ construction and publication errors propagate. Do not already hold this lock."
    (lambda ()
      (let ((value (funcall build)))
        (when value
-         (sidecar-write pathname value :encode encode
+         (sidecar-write pathname value :encode       encode
                                        :source-token source-token
-                                       :value-token value-token))))))
+                                       :value-token  value-token))))))

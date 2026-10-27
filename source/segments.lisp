@@ -4,9 +4,9 @@
 
 (define-condition segment-error (store-error)
   ((sequence
-    :initarg :sequence
-    :initform nil
-    :reader segment-error-sequence
+    :initarg       :sequence
+    :initform      nil
+    :reader        segment-error-sequence
     :documentation "The invalid sequence or boundary, when available."))
   (:documentation "A readable log segment violates its declared boundaries."))
 
@@ -28,12 +28,12 @@ Callback conditions propagate unchanged. An incomplete final form is tolerated;
 an absent header, missing required first record, or sequence gap is an error.
 Return next byte position, incomplete-tail flag, record count, start sequence,
 and next sequence. Headers are not passed to FUNCTION."
-  (let ((header nil)
+  (let ((header        nil)
         (header-seen-p nil)
         (allow-empty-p nil)
-        (count 0)
-        (start nil)
-        (next nil))
+        (count         0)
+        (start         nil)
+        (next          nil))
     (multiple-value-bind (position incomplete-p mapped-count)
         (log-map
          (lambda (record)
@@ -86,8 +86,8 @@ record count, and next sequence. An empty pathname list returns NIL, zero, NIL."
   (declare (ignore header-function record-sequence validate-record
                    validate-first-record))
   (let ((incomplete-p nil)
-        (count 0)
-        (next nil))
+        (count        0)
+        (next         nil))
     (dolist (pathname pathnames)
       (multiple-value-bind (position tail-p segment-count start segment-next)
           (apply #'segment-map function pathname

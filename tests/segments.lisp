@@ -16,14 +16,14 @@
 
 (defun tests--segments (root)
   "Exercise ordered segment boundaries, torn tails, publication and recovery."
-  (let* ((first-path (merge-pathnames "first.log" root))
+  (let* ((first-path  (merge-pathnames "first.log" root))
          (second-path (merge-pathnames "second.log" root))
-         (options (list :header-function #'tests--segment-header
-                        :record-sequence #'tests--segment-sequence)))
+         (options     (list :header-function #'tests--segment-header
+                            :record-sequence #'tests--segment-sequence)))
     (dolist (forms '(nil ((:log :version 1 :start 1))
-                    ((:log :version 1 :start 1) (:event :seq 2))
-                    ((:log :version 1 :start 1) (:event :seq 1) (:event :seq 1))
-                    ((:log :version 1 :start 1) (:event :seq 1) (:event :seq 3))))
+                     ((:log :version 1 :start 1) (:event :seq 2))
+                     ((:log :version 1 :start 1) (:event :seq 1) (:event :seq 1))
+                     ((:log :version 1 :start 1) (:event :seq 1) (:event :seq 3))))
       (log-write first-path forms)
       (test-assert
        (signals sexp-store:segment-error
@@ -71,7 +71,7 @@
     (tests--write-text first-path "))" :append t)
     (test-assert (signals store-error (sexp-store:log-repair-tail first-path))
                  "complete malformed tails are never discarded")
-    (let ((path (merge-pathnames "publication.log" root))
+    (let ((path   (merge-pathnames "publication.log" root))
           (header '(:log :version 1 :start 1))
           (record (list :event :seq 1 :payload (vector "Case" 1/3))))
       (sexp-store:segment-publish path header record)
@@ -123,12 +123,12 @@
 
 (defun tests--sidecars (root)
   "Exercise revision validation, concurrent invalidation and derived snapshots."
-  (let* ((path (merge-pathnames "derived.sexp" root))
+  (let* ((path          (merge-pathnames "derived.sexp" root))
          (revision-path (merge-pathnames "revision.sexp" root))
-         (revision 1)
-         (value (list :value :revision revision))
-         (options (list :source-token (lambda () revision)
-                        :value-token (lambda (value) (getf (rest value) :revision)))))
+         (revision      1)
+         (value         (list :value :revision revision))
+         (options       (list :source-token (lambda () revision)
+                              :value-token  (lambda (value) (getf (rest value) :revision)))))
     (test-assert (zerop (sexp-store:revision-read revision-path :tag ':revision))
                  "missing revisions default to zero")
     (sexp-store:revision-write revision-path 1 :tag ':revision)
@@ -155,7 +155,7 @@
     (setf revision 1)
     (test-assert
      (null (apply #'sexp-store:sidecar-read path :decode (lambda (record)
-                                                         (incf revision) record)
+                                                          (incf revision) record)
                   options))
      "invalidation during decode rejects the result")
     (test-assert (null (apply #'sexp-store:sidecar-read path
@@ -163,7 +163,7 @@
                                        (declare (ignore record))
                                        (error 'store-error :pathname path
                                                           :operation ':decode
-                                                          :message "Invalid cache."))
+                                                          :message   "Invalid cache."))
                              options))
                  "cache decode failures permit reconstruction")
     (tests--write-text path "#.(error \"read evaluation\")")
@@ -174,15 +174,15 @@
 #+sbcl
 (defun tests--sidecar-rebuild (root)
   "Exclude a paused invalidation and release the source lock after build failures."
-  (let* ((path (merge-pathnames "locked-derived.sexp" root))
-         (source (merge-pathnames "source.sexp" root))
-         (revision-path (merge-pathnames "source-revision.sexp" root))
-         (lock-path (merge-pathnames "source.lock" root))
-         (invalidated (sb-thread:make-semaphore :count 0))
+  (let* ((path            (merge-pathnames "locked-derived.sexp" root))
+         (source          (merge-pathnames "source.sexp" root))
+         (revision-path   (merge-pathnames "source-revision.sexp" root))
+         (lock-path       (merge-pathnames "source.lock" root))
+         (invalidated     (sb-thread:make-semaphore :count 0))
          (continue-writer (sb-thread:make-semaphore :count 0))
-         (reader-started (sb-thread:make-semaphore :count 0))
-         (built (sb-thread:make-semaphore :count 0))
-         (threads nil))
+         (reader-started  (sb-thread:make-semaphore :count 0))
+         (built           (sb-thread:make-semaphore :count 0))
+         (threads         nil))
     (labels ((revision ()
                (sexp-store:revision-read revision-path :tag ':revision))
 
@@ -236,7 +236,7 @@
                             (rebuild (lambda ()
                                        (error 'store-error :pathname source
                                                           :operation ':read
-                                                          :message "Build failed."))))
+                                                          :message   "Build failed."))))
                           "construction errors propagate")
              (test-assert (equal (rebuild #'build) '(:derived :data :b :revision 2))
                           "a construction error releases the source lock")
@@ -276,8 +276,8 @@
 (defun tests--exclusive-publication (root)
   "Race create-only publishers and reject even a dangling target symlink."
   (let* ((pathname (merge-pathnames "exclusive.sexp" root))
-         (gate (sb-thread:make-semaphore :count 0))
-         (threads nil))
+         (gate     (sb-thread:make-semaphore :count 0))
+         (threads  nil))
     (unwind-protect
          (progn
            (setf threads
