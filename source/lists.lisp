@@ -28,7 +28,7 @@ REQUIRED-KEYS order. An omitted ALLOWED-KEYS accepts any keyword key."
                (incf count))
       (when (oddp count)
         (return-from check (values ':odd nil)))
-      (loop for key in properties by #'cddr
+      (loop for key in properties by #'plist--next
             do (when (and keyword-keys-p (not (keywordp key)))
                  (return-from check (values ':non-keyword key)))
                (when (and allowed-keys-p (not (member key allowed-keys :test #'eq)))
@@ -48,3 +48,7 @@ REQUIRED-KEYS order. An omitted ALLOWED-KEYS accepts any keyword key."
   (declare (ignore allowed-keys required-keys keyword-keys-p maximum-length
                    allow-duplicate-keys))
   (null (apply #'plist-schema-problem properties options)))
+
+(defun plist--next (tail)
+  "Return TAIL without its first key and value."
+  (nthcdr 2 tail))

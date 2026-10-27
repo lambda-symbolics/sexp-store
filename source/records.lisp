@@ -8,7 +8,7 @@
 
 (defun record--present-p (properties indicator)
   "Return true when INDICATOR appears in the PROPERTIES plist."
-  (do ((tail properties (cddr tail)))
+  (do ((tail properties (plist--next tail)))
       ((null tail) nil)
     (when (eq (first tail) indicator)
       (return t))))

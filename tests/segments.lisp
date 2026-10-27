@@ -257,7 +257,7 @@
   (dolist (body (list '(:version 1 :missing)
                      '(:version 1 . :dotted)
                      (let ((body (list :version 1)))
-                       (setf (cddr body) body)
+                       (setf (rest (last body)) body)
                        body)))
     (let ((form (cons :record body)))
       (test-assert (not (record-check form :tag ':record :versions '(1)))
