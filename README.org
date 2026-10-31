@@ -44,6 +44,8 @@ writes require caller-side writer serialization, as with =snapshot-write=.
 - A malformed complete form signals =store-error=
 - =log-map= visits one complete form at a time and returns a file position
   that a later call may use as =:start-position=
+- =log-write-streaming= publishes a whole log atomically from forms a producer
+  emits one at a time, so rebuilding a large log never holds it in memory
 
 Applications that have already verified the tail may pass
 =:repair-tail-p nil= for constant-time appends to a large log. Request repair

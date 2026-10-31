@@ -101,6 +101,30 @@
     (tests--write-text pathname ")\n" :append t)
     (test-assert (signals store-error (log-read pathname))
                  "malformed complete reader input signals STORE-ERROR"))
+  (let ((pathname (merge-pathnames "streamed.sexp" root)))
+    (log-write-streaming pathname
+                         (lambda (emit)
+                           (funcall emit '(:events :version 1))
+                           (dotimes (index 3)
+                             (funcall emit (list :event :id index)))))
+    (test-assert (equal (log-read pathname)
+                        '((:events :version 1) (:event :id 0) (:event :id 1) (:event :id 2)))
+                 "a streamed log publishes every emitted form in order")
+    (test-assert (signals simple-error
+                   (log-write-streaming pathname
+                                        (lambda (emit)
+                                          (funcall emit '(:events :version 1))
+                                          (error "producer failure"))))
+                 "a producer's own failure propagates unchanged")
+    (test-assert (= 4 (length (log-read pathname)))
+                 "a failed producer publishes nothing")
+    (test-assert (signals store-error
+                   (log-write-streaming pathname
+                                        (lambda (emit)
+                                          (funcall emit (function car)))))
+                 "an unreadable form signals STORE-ERROR")
+    (test-assert (= 4 (length (log-read pathname)))
+                 "an unreadable form publishes nothing"))
   (let ((pathname          (merge-pathnames "read-eval.sexp" root))
         (*read-eval-ran-p* nil))
     (declare (special *read-eval-ran-p*))

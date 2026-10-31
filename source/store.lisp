@@ -183,27 +183,52 @@ Malformed complete input signals STORE-ERROR."
 
 (defun store--write-forms (pathname forms &key append mode)
   "Write readable FORMS to PATHNAME, optionally appending them."
-  (ensure-directories-exist pathname)
-  (handler-case
-      (with-open-file (stream pathname
-                              :direction         :output
-                              :if-exists         (if append :append :supersede)
-                              :if-does-not-exist :create
-                              :external-format   :utf-8)
-        (store--set-mode pathname mode)
-        (let ((*print-circle*   t)
-              (*print-readably* t)
-              (*print-pretty*   t))
-          (dolist (form forms)
-            (prin1 form stream)
-            (terpri stream))
-          (finish-output stream)))
-    (store-error (condition)
-      (error condition))
-    (error (cause)
-      (store--fail ':write pathname
-                   (format nil "Could not write readable state: ~A" cause)
-                   :cause cause)))
+  (store--write-with pathname
+                     (lambda (emit)
+                       (dolist (form forms)
+                         (funcall emit form)))
+                     :append append
+                     :mode   mode))
+
+(defun store--write-with (pathname writer &key append mode)
+  "Call WRITER with an EMIT function that prints one readable form to PATHNAME.
+
+The file is created or, with APPEND, extended. Failures to open, print, or
+flush become STORE-ERROR; other conditions WRITER signals propagate unchanged."
+  (flet ((fail (cause)
+           (store--fail ':write pathname
+                        (format nil "Could not write readable state: ~A" cause)
+                        :cause cause)))
+    (ensure-directories-exist pathname)
+    (let ((stream      (handler-case
+                           (open pathname
+                                 :direction         :output
+                                 :if-exists         (if append :append :supersede)
+                                 :if-does-not-exist :create
+                                 :external-format   :utf-8)
+                         (error (cause)
+                           (fail cause))))
+          (completed-p nil))
+      (unwind-protect
+           (progn
+             (store--set-mode pathname mode)
+             (let ((*print-circle*   t)
+                   (*print-readably* t)
+                   (*print-pretty*   t))
+               (funcall writer
+                        (lambda (form)
+                          (handler-case
+                              (progn
+                                (prin1 form stream)
+                                (terpri stream))
+                            (error (cause)
+                              (fail cause)))
+                          nil)))
+             (handler-case (finish-output stream)
+               (error (cause)
+                 (fail cause)))
+             (setf completed-p t))
+        (close stream :abort (not completed-p)))))
   pathname)
 
 (defun store--publish-exclusive (temporary pathname)
@@ -242,11 +267,29 @@ when replacing an existing file. FORMS must be a finite proper list."
   (unless (handler-case (not (null (list-length forms)))
             (type-error () nil))
     (store--fail ':write pathname "FORMS must be a finite proper list."))
+  (log-write-streaming pathname
+                       (lambda (emit)
+                         (dolist (form forms)
+                           (funcall emit form)))
+                       :mode           mode
+                       :require-absent require-absent))
+
+(defun log-write-streaming (pathname producer &key (mode #o600) require-absent)
+  "Atomically publish the readable forms PRODUCER emits at PATHNAME.
+
+PRODUCER is called with one function, EMIT, which writes each form it receives
+to a private temporary file at once, so a log of any length is published
+without holding its forms in memory. Publication follows PRODUCER's normal
+return exactly as in LOG-WRITE. A nonlocal exit from PRODUCER publishes
+nothing and leaves PATHNAME unchanged."
+  (unless (functionp producer)
+    (store--fail ':write pathname "PRODUCER must be a function."))
   (ensure-directories-exist pathname)
   (uiop:call-with-temporary-file
    (lambda (temporary)
      (store--set-mode temporary #o600)
-     (store--write-forms temporary forms :mode mode)
+     (store--write-with temporary producer)
+     (store--set-mode temporary mode)
      (if require-absent
          (store--publish-exclusive temporary pathname)
          (progn

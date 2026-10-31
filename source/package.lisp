@@ -7,6 +7,7 @@
            #:log-map
            #:log-read
            #:log-write
+           #:log-write-streaming
            #:log-repair-tail
            #:segment-error
            #:segment-error-sequence
@@ -55,6 +56,7 @@
                 #:log-map
                 #:log-read
                 #:log-write
+                #:log-write-streaming
                 #:make-record
                 #:publication-conflict
                 #:record-check
