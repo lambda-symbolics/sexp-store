@@ -65,8 +65,11 @@
 (defgeneric store--read (store)
   (:documentation "Return fresh state, source forms, tail status, and whether an unreadable snapshot is being replaced."))
 
-(defgeneric store--publish (store &key state change forms replace-existing-p)
+(defgeneric store--publish (store &key state change forms incomplete-p replace-existing-p)
   (:documentation "Validate and persist CHANGE, returning the published state."))
+
+(defgeneric store--working-state (store forms)
+  (:documentation "Return fresh public state for an updater, independent of the publication base read as FORMS."))
 
 (defun record-finite-p (form)
   "Return true for acyclic readable data, allowing shared substructure.
@@ -172,10 +175,13 @@ and application field predicates, so neither receives circular or dotted data."
             (values (funcall (snapshot-store-decoder store) value) (list value) nil nil)))
       (values (funcall (transaction-store-initial-state store)) nil nil nil)))
 
-(defmethod store--publish ((store log-store) &key state change forms replace-existing-p)
-  "Publish FORMS and the CHANGE records, and return STATE with CHANGE folded in.
+(defmethod store--publish ((store log-store) &key state change forms incomplete-p replace-existing-p)
+  "Publish the CHANGE records after FORMS, and return STATE with CHANGE folded in.
 
-Empty FORMS start a new log with STORE's header."
+Empty FORMS start a new log with STORE's header. A complete log grows by CHANGE
+alone: one record is appended as itself, several as one batch form, so a crash
+leaves all of them or none. Only a log with an incomplete final form is
+rewritten, as FORMS followed by CHANGE."
   (declare (ignore replace-existing-p))
   (unless (and (record-finite-p change)
                (handler-case (integerp (list-length change))
@@ -185,35 +191,103 @@ Empty FORMS start a new log with STORE's header."
   (dolist (record change)
     (store--validate-record store record (transaction-store-validator store))
     (setf state (funcall (log-store-reducer store) state record)))
-  (let ((require-absent (null forms)))
-    (unless forms
-      (store--validate-record store (log-store-header store)
-                              (log-store-header-validator store))
-      (setf forms (list (log-store-header store))))
-    ;; One publication covers the whole batch and removes only an incomplete tail.
-    (store--write-transaction store (append forms change)
-                              :require-absent require-absent))
+  (cond
+    ((null forms)
+     (store--validate-record store (log-store-header store)
+                             (log-store-header-validator store))
+     (store--write-transaction store (cons (log-store-header store) change)
+                               :require-absent t))
+    (incomplete-p
+     ;; Repair: one atomic rewrite removes the incomplete tail and adds CHANGE.
+     (store--write-transaction store (append forms change)))
+    ((rest change)
+     (store--write-transaction store (list (store--batch-form change)) :append t))
+    (change
+     (store--write-transaction store change :append t)))
   state)
 
-(defmethod store--publish ((store snapshot-store) &key state change forms replace-existing-p)
+(defmethod store--publish ((store snapshot-store) &key state change forms incomplete-p replace-existing-p)
   "Replace STORE's snapshot with the encoded CHANGE and return CHANGE."
-  (declare (ignore state))
+  (declare (ignore state incomplete-p))
   (let ((form (funcall (snapshot-store-encoder store) change)))
     (store--validate-record store form (transaction-store-validator store))
     (store--write-transaction store (list form)
                               :require-absent (not (or forms replace-existing-p))))
   change)
 
-(defun store--write-transaction (store forms &key require-absent)
-  "Publish FORMS, preserving typed storage failures at the transaction boundary."
+(defun store--write-transaction (store forms &key require-absent append)
+  "Publish FORMS, preserving typed storage failures at the transaction boundary.
+
+With APPEND, FORMS extend the existing file; otherwise they replace it atomically."
   (handler-case
-      (log-write (transaction-store-pathname store) forms
-                 :require-absent require-absent)
+      (if append
+          (store--write-forms (transaction-store-pathname store) forms :append t)
+          (log-write (transaction-store-pathname store) forms
+                     :require-absent require-absent))
     (store-error (cause)
       (error cause))
     (error (cause)
       (store--fail ':publish (transaction-store-pathname store)
                    "Could not publish the state transaction." :cause cause))))
+
+(defmethod store--working-state ((store log-store) forms)
+  "Fold a copy of FORMS, so the updater may change its state and records freely."
+  (let ((state (funcall (transaction-store-initial-state store))))
+    (dolist (record (rest (store--copy-form forms)))
+      (setf state (funcall (log-store-reducer store) state record)))
+    (store--finalize store state)))
+
+(defmethod store--working-state ((store snapshot-store) forms)
+  "Read STORE again, so a recovery callback returns a fresh value for the updater."
+  (declare (ignore forms))
+  (values (store-read store :lock-held-p t)))
+
+(defun store--copy-form (form)
+  "Return a copy of readable FORM with fresh conses, strings and arrays.
+
+Shared substructure stays shared within the copy. FORM is finite, as validated
+records are; list spines are copied without recursion, so long lists are safe."
+  (let ((copies (make-hash-table :test #'eq)))
+    (labels ((copy (value)
+               (cond
+                 ((not (or (consp value) (arrayp value)))
+                  value)
+                 ((gethash value copies))
+                 ((consp value)
+                  (copy-spine value))
+                 (t
+                  (copy-array value))))
+
+             (copy-array (array)
+               (let ((copy (make-array (array-dimensions array)
+                                       :element-type (array-element-type array))))
+                 (setf (gethash array copies) copy)
+                 (dotimes (index (array-total-size array))
+                   (setf (row-major-aref copy index) (copy (row-major-aref array index))))
+                 copy))
+
+             (copy-spine (list)
+               (let* ((head    (cons nil nil))
+                      (current head)
+                      (source  list))
+                 (setf (gethash source copies) head)
+                 (loop
+                   (setf (first current) (copy (first source)))
+                   (let ((next (rest source)))
+                     (cond
+                       ((not (consp next))
+                        (setf (rest current) (copy next))
+                        (return head))
+                       ((gethash next copies)
+                        (setf (rest current) (gethash next copies))
+                        (return head))
+                       (t
+                        (let ((cell (cons nil nil)))
+                          (setf (gethash next copies) cell
+                                (rest current)        cell
+                                current               cell
+                                source                next)))))))))
+      (copy form))))
 
 (defgeneric store--finalize (store state)
   (:documentation "Return the application-facing value of fresh STATE."))
@@ -258,23 +332,26 @@ log tails are ignored without modifying bytes. Callback errors propagate."
 UPDATE receives freshly reconstructed state and returns three values: CHANGE,
 RESULT, and WRITE-P. For LOG-STORE, CHANGE is a proper list of new records; for
 SNAPSHOT-STORE it is replacement state. When WRITE-P is false nothing is written.
-When true the entire change is validated before one atomic publication, including
-repair of an incomplete log tail. PUBLISH, when supplied, receives committed
+When true the entire change is validated before it is published. A log grows by
+the change alone, appended as one form, so after a crash all of it or none of it
+is durable; a log with an incomplete final form is rewritten once instead,
+which repairs it. The file is read once: the updater's state is folded from a
+copy of what was read, so finalizers and UPDATE may modify their working values
+without touching the publication base. PUBLISH, when supplied, receives committed
 state only after successful persistence, including for a read-only transaction.
 Return RESULT and committed state. Callbacks must not expose or install their
-private working state before PUBLISH. Finalizers and UPDATE may modify their
-working values; reconstruct the publication base independently under the same
-lock. Callback errors propagate unchanged; a PUBLISH failure occurs after commit
-and does not roll back durable state."
+private working state before PUBLISH. Callback errors propagate unchanged; a
+PUBLISH failure occurs after commit and does not roll back durable state."
   (store--call-with-lock
    store
    (lambda ()
-      (multiple-value-bind (state forms incomplete-p replace-existing-p) (store--read store)
-       (declare (ignore incomplete-p))
+     ;; One read: the updater's state is folded from a copy of the forms read.
+     (multiple-value-bind (state forms incomplete-p replace-existing-p) (store--read store)
        (multiple-value-bind (change result write-p)
-           (funcall update (store-read store :lock-held-p t))
+           (funcall update (store--working-state store forms))
          (when write-p
-            (setf state (store--publish store :state state :change change :forms forms
+           (setf state (store--publish store :state state :change change :forms forms
+                                       :incomplete-p       incomplete-p
                                        :replace-existing-p replace-existing-p)))
          (let ((committed (store--finalize store state)))
            (when publish

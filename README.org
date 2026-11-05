@@ -116,9 +116,12 @@ state and record. An optional =:finalizer= converts folded state to its public
 value. For a =snapshot-store=, supply =:decoder= and =:encoder= callbacks.
 The updater receives fresh public state and returns changes, a result, and
 whether to write. Log changes are a list of records; snapshot changes are
-replacement state. A log batch is validated and published in one operation,
-including removal of an incomplete final form. Existing empty or malformed
-files are errors, rather than missing stores.
+replacement state. A log batch is validated, then appended: one record as
+itself, several as one batch form, so the log grows by the change alone and a
+crash leaves all of it or none of it. Only a log with an incomplete final form
+is rewritten, once, which repairs it. A transaction reads the file once; the
+updater's state is folded from a copy of what was read. Existing empty or
+malformed files are errors, rather than missing stores.
 
 A =snapshot-store= may supply =:recover-read-error=, a function of =store-error=
 that returns fresh fallback state. Recovery during a read or read-only
