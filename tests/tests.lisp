@@ -163,6 +163,36 @@
                 (eq cause condition)))
             "streaming reads do not mistake callback EOF for an incomplete tail"))
       (close stream)))
+  (tests--log-batches root)
+  nil)
+
+(defun tests--log-batches (root)
+  "Read transaction batches as their records, all of them or none."
+  (let ((pathname (merge-pathnames "batches.sexp" root))
+        (batch    "(:sexp-store-batch :version 1 :records ((:event :id 2) (:event :id 3)))"))
+    (tests--write-text pathname (format nil "(:events :version 1)~%(:event :id 1)~%~A~%" batch))
+    (multiple-value-bind (forms incomplete-p) (log-read pathname)
+      (test-assert (and (not incomplete-p)
+                        (equal forms '((:events :version 1) (:event :id 1)
+                                       (:event :id 2) (:event :id 3))))
+                   "a batch reads as its records in order"))
+    (test-assert (= 4 (nth-value 2 (log-map (lambda (form) (declare (ignore form))) pathname)))
+                 "the visit count counts a batch's records")
+    (loop for cut from 1 below (length batch)
+          do (tests--write-text pathname (format nil "(:events :version 1)~%(:event :id 1)~%~A"
+                                                 (subseq batch 0 cut)))
+             (multiple-value-bind (forms incomplete-p) (log-read pathname)
+               (unless (and incomplete-p
+                            (equal forms '((:events :version 1) (:event :id 1))))
+                 (test-assert nil (format nil "a batch cut at ~D shows none of its records" cut)))))
+    (test-assert t "a batch cut short anywhere shows none of its records")
+    (dolist (text '("(:sexp-store-batch :version 2 :records ((:event :id 1)))"
+                    "(:sexp-store-batch :version 1)"
+                    "(:sexp-store-batch :version 1 :records (:event . 1))"
+                    "(:sexp-store-batch :version 1 :records ((:event :id 1)) :extra t)"))
+      (tests--write-text pathname text)
+      (test-assert (signals store-error (log-read pathname))
+                   (format nil "a malformed batch is an error: ~A" text))))
   nil)
 
 (defun tests--record-fields ()

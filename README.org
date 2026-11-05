@@ -46,6 +46,10 @@ writes require caller-side writer serialization, as with =snapshot-write=.
   that a later call may use as =:start-position=
 - =log-write-streaming= publishes a whole log atomically from forms a producer
   emits one at a time, so rebuilding a large log never holds it in memory
+- A form tagged =:sexp-store-batch= is a transaction batch, the one form a
+  store transaction appends for several records. Readers visit its records in
+  order, and a batch cut short by a crash shows none of them. The tag is
+  reserved for this library.
 
 Applications that have already verified the tail may pass
 =:repair-tail-p nil= for constant-time appends to a large log. Request repair

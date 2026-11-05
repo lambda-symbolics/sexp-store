@@ -47,6 +47,14 @@
 
 ;;;; -- Reading --
 
+(defparameter *store-batch-tag* ':sexp-store-batch
+  "The tag of a transaction batch form, reserved by this library.
+
+A store transaction that publishes several records appends them as one form
+(:SEXP-STORE-BATCH :VERSION 1 :RECORDS (RECORD ...)). Readers visit its records
+in place of the form, and a crash while appending it leaves an incomplete final
+form, so a reader sees all of a transaction's records or none of them.")
+
 (defun snapshot-read (pathname &key grammar maximum-octets)
   "Read PATHNAME with evaluation disabled.
 
@@ -76,11 +84,14 @@ MAXIMUM-OCTETS bounds that capture. Reader errors are wrapped in STORE-ERROR."
 (defun log-map (function pathname &key (start-position 0))
   "Call FUNCTION for each complete form in PATHNAME from START-POSITION.
 
-Evaluation is disabled while forms are read. Return the position after the last
-complete form, whether reading stopped inside an incomplete final form, and the
-number of forms visited. The returned position may be supplied to a later call
-after forms have only been appended. Callback conditions propagate unchanged.
-A missing file is empty only at position zero."
+Evaluation is disabled while forms are read. A transaction batch, the one
+top-level form a store transaction appends for several records, is visited as
+its records in order, so a batch cut short by a crash shows none of them.
+Return the position after the last complete top-level form, whether reading
+stopped inside an incomplete final form, and the number of forms visited. The
+returned position may be supplied to a later call after forms have only been
+appended. Callback conditions propagate unchanged. A missing file is empty only
+at position zero."
   (unless (functionp function)
     (store--fail ':read pathname "FUNCTION must be a function."))
   (unless (typep start-position '(integer 0))
@@ -149,9 +160,32 @@ A missing file is empty only at position zero."
                       (or (file-position stream) form-start)
                       nil
                       count)))
-                 (funcall function form)
-                 (incf count))))
+                 (dolist (record (store--batch-records form pathname))
+                   (funcall function record)
+                   (incf count)))))
       (close stream))))
+
+(defun store--batch-form (records)
+  "Return the one top-level form that publishes RECORDS together."
+  (list *store-batch-tag* :version 1 :records records))
+
+(defun store--batch-records (form pathname)
+  "Return the records FORM stands for: a batch's records, or FORM alone.
+
+A form tagged as a batch must be a version 1 batch holding a proper list of
+records; any other shape signals STORE-ERROR for PATHNAME."
+  (if (and (consp form) (eq (first form) *store-batch-tag*))
+      (let ((records (getf (rest form) :records)))
+        (unless (and (plist-schema-p (rest form)
+                                     :allowed-keys  '(:version :records)
+                                     :required-keys '(:version :records))
+                     (eql (getf (rest form) :version) 1)
+                     (listp records)
+                     (handler-case (integerp (list-length records))
+                       (type-error () nil)))
+          (store--fail ':read pathname "A transaction batch is malformed."))
+        records)
+      (list form)))
 
 (defun log-read (pathname)
   "Read every complete top-level form from PATHNAME with evaluation disabled.
