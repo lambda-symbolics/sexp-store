@@ -43,7 +43,12 @@
     :initarg       :finalizer
     :initform      #'identity
     :reader        log-store-finalizer
-    :documentation "A function converting folded state to the public state value."))
+    :documentation "A function converting folded state to the public state value.")
+   (compactor
+    :initarg       :compactor
+    :initform      nil
+    :reader        log-store-compactor
+    :documentation "An optional function of folded state returning the fewest records that fold to it, used by STORE-COMPACT."))
   (:documentation "A header followed by validated events folded into fresh state."))
 
 (defclass snapshot-store (transactional-store)
@@ -357,3 +362,32 @@ PUBLISH failure occurs after commit and does not roll back durable state."
            (when publish
              (funcall publish committed))
            (values result committed)))))))
+
+(defun store-compact (store)
+  "Rewrite LOG-STORE STORE's log as its header and compacted records, under its lock.
+
+With a COMPACTOR, the records are those it returns for the folded state;
+without one, the complete records as read, batches flattened and an incomplete
+final form dropped. The records are validated and folded before one atomic
+replacement, so a failure leaves the log unchanged. A missing log stays missing.
+Return the number of records written and the committed public state."
+  (store--call-with-lock
+   store
+   (lambda ()
+     (multiple-value-bind (state forms) (store--read store)
+       (unless forms
+         (return-from store-compact (values 0 (store--finalize store state))))
+       (let ((records (if (log-store-compactor store)
+                          (funcall (log-store-compactor store) state)
+                          (rest forms)))
+             (folded  (funcall (transaction-store-initial-state store))))
+         (unless (and (record-finite-p records)
+                      (handler-case (integerp (list-length records))
+                        (type-error () nil)))
+           (store--fail ':validate (transaction-store-pathname store)
+                        "A compactor must return a finite proper list of records."))
+         (dolist (record records)
+           (store--validate-record store record (transaction-store-validator store))
+           (setf folded (funcall (log-store-reducer store) folded record)))
+         (store--write-transaction store (cons (first forms) records))
+         (values (length records) (store--finalize store folded)))))))

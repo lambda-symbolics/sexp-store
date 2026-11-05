@@ -34,6 +34,7 @@
            #:snapshot-store
            #:store-read
            #:store-transact
+           #:store-compact
            #:snapshot-read
            #:snapshot-read-record
            #:snapshot-write

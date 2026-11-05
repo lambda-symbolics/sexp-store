@@ -123,6 +123,13 @@ is rewritten, once, which repairs it. A transaction reads the file once; the
 updater's state is folded from a copy of what was read. Existing empty or
 malformed files are errors, rather than missing stores.
 
+Call =store-compact= to rewrite a log once it has grown. Give the =log-store=
+a =:compactor=, a function of folded state returning the fewest records that
+fold to it, and the log becomes its header followed by those records. Without
+one, compaction keeps every complete record, flattening batches and dropping
+an incomplete final form. The records are validated and folded first, and the
+log is replaced atomically. It returns the record count and committed state.
+
 A =snapshot-store= may supply =:recover-read-error=, a function of =store-error=
 that returns fresh fallback state. Recovery during a read or read-only
 transaction leaves the original bytes untouched. A writing transaction validates
