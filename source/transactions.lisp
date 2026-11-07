@@ -188,13 +188,7 @@ alone: one record is appended as itself, several as one batch form, so a crash
 leaves all of them or none. Only a log with an incomplete final form is
 rewritten, as FORMS followed by CHANGE."
   (declare (ignore replace-existing-p))
-  (unless (and (record-finite-p change)
-               (handler-case (integerp (list-length change))
-                 (type-error () nil)))
-    (store--fail ':validate (transaction-store-pathname store)
-                 "A log transaction must return a finite proper list of records."))
-  (dolist (record change)
-    (store--validate-record store record (transaction-store-validator store))
+  (dolist (record (store--validate-change store change))
     (setf state (funcall (log-store-reducer store) state record)))
   (cond
     ((null forms)
@@ -205,11 +199,29 @@ rewritten, as FORMS followed by CHANGE."
     (incomplete-p
      ;; Repair: one atomic rewrite removes the incomplete tail and adds CHANGE.
      (store--write-transaction store (append forms change)))
+    (t
+     (store--append-change store change)))
+  state)
+
+(defun store--append-change (store change)
+  "Append CHANGE to STORE's complete log: one record as itself, several as one batch form."
+  (cond
     ((rest change)
      (store--write-transaction store (list (store--batch-form change)) :append t))
     (change
      (store--write-transaction store change :append t)))
-  state)
+  nil)
+
+(defun store--validate-change (store change)
+  "Signal STORE-ERROR unless CHANGE is a finite proper list of valid records for log STORE."
+  (unless (and (record-finite-p change)
+               (handler-case (integerp (list-length change))
+                 (type-error () nil)))
+    (store--fail ':validate (transaction-store-pathname store)
+                 "A log transaction must return a finite proper list of records."))
+  (dolist (record change)
+    (store--validate-record store record (transaction-store-validator store)))
+  change)
 
 (defmethod store--publish ((store snapshot-store) &key state change forms incomplete-p replace-existing-p)
   "Replace STORE's snapshot with the encoded CHANGE and return CHANGE."
@@ -350,18 +362,22 @@ PUBLISH failure occurs after commit and does not roll back durable state."
   (store--call-with-lock
    store
    (lambda ()
-     ;; One read: the updater's state is folded from a copy of the forms read.
-     (multiple-value-bind (state forms incomplete-p replace-existing-p) (store--read store)
-       (multiple-value-bind (change result write-p)
-           (funcall update (store--working-state store forms))
-         (when write-p
-           (setf state (store--publish store :state state :change change :forms forms
-                                       :incomplete-p       incomplete-p
-                                       :replace-existing-p replace-existing-p)))
-         (let ((committed (store--finalize store state)))
-           (when publish
-             (funcall publish committed))
-           (values result committed)))))))
+     (store--transact-locked store update publish))))
+
+(defun store--transact-locked (store update publish)
+  "Run STORE-TRANSACT's read, update and publication while the caller holds STORE's lock."
+  ;; One read: the updater's state is folded from a copy of the forms read.
+  (multiple-value-bind (state forms incomplete-p replace-existing-p) (store--read store)
+    (multiple-value-bind (change result write-p)
+        (funcall update (store--working-state store forms))
+      (when write-p
+        (setf state (store--publish store :state state :change change :forms forms
+                                    :incomplete-p       incomplete-p
+                                    :replace-existing-p replace-existing-p)))
+      (let ((committed (store--finalize store state)))
+        (when publish
+          (funcall publish committed))
+        (values result committed)))))
 
 (defun store-compact (store)
   "Rewrite LOG-STORE STORE's log as its header and compacted records, under its lock.

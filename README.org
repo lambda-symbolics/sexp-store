@@ -130,6 +130,17 @@ one, compaction keeps every complete record, flattening batches and dropping
 an incomplete final form. The records are validated and folded first, and the
 log is replaced atomically. It returns the record count and committed state.
 
+A process that reads one log often keeps a =log-follower=, made by
+=log-follower-create= with a =:copier=, a function returning a copy of folded
+state that the reducer may change. =log-follower-read= folds only the records
+appended since the follower last read, and =log-follower-transact= works like
+=store-transact= but appends and folds just its change. A follower never
+changes a state it has returned, so callers may keep one while it moves on. A
+log that was replaced, as by compaction, shortened or removed is folded again
+from its start. A log with an incomplete final form, or no log yet, takes the
+=store-transact= path, which repairs or creates it. Callers serialize their own
+use of one follower; the store's lock serializes processes.
+
 A =snapshot-store= may supply =:recover-read-error=, a function of =store-error=
 that returns fresh fallback state. Recovery during a read or read-only
 transaction leaves the original bytes untouched. A writing transaction validates

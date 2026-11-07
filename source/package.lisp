@@ -35,6 +35,10 @@
            #:store-read
            #:store-transact
            #:store-compact
+           #:log-follower
+           #:log-follower-create
+           #:log-follower-read
+           #:log-follower-transact
            #:snapshot-read
            #:snapshot-read-record
            #:snapshot-write

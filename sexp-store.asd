@@ -12,6 +12,7 @@
                               (:file "store")
                               (:file "records")
                               (:file "transactions")
+                              (:file "followers")
                               (:file "segments")
                               (:file "sidecars")
                               (:file "files"))))
