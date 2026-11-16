@@ -80,9 +80,9 @@ the committed state. Return RESULT and the committed state."
 
 (defun log-follower--transact-appending (follower update publish)
   "Append UPDATE's change to FOLLOWER's complete log, while the caller holds its lock."
-  (let* ((store   (log-follower-store follower))
-         (copier  (log-follower-copier follower))
-         (state   (log-follower--state follower)))
+  (let* ((store  (log-follower-store follower))
+         (copier (log-follower-copier follower))
+         (state  (log-follower--state follower)))
     (multiple-value-bind (change result write-p)
         (funcall update (store--finalize store (funcall copier state)))
       (when write-p
