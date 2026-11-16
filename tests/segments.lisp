@@ -14,8 +14,85 @@
   "Return the fixture record's sequence."
   (record-property record ':seq))
 
+(defun tests--segments-reverse (root)
+  "Exercise reverse record order, bounded visitation, validation and callback exits."
+  (let* ((older           (merge-pathnames "reverse-older.log" root))
+         (newer           (merge-pathnames "reverse-newer.log" root))
+         (empty           (merge-pathnames "reverse-empty.log" root))
+         (missing         (merge-pathnames "reverse-unvisited.log" root))
+         (options         (list :header-function #'tests--segment-header
+                                :record-sequence #'tests--segment-sequence))
+         (forward         nil)
+         (reverse-records nil))
+    (log-write older (list '(:log :version 1 :start 1)
+                           (list :event :seq 1 :text (format nil "Žluťoučký~%with \\\"quotes\\\""))
+                           '(:event :seq 2)))
+    (log-write newer '((:log :version 1 :start 3) (:event :seq 3) (:event :seq 4)))
+    (log-write empty '((:log :version 1 :start 5 :empty t)))
+    (apply #'sexp-store:segments-map (lambda (record) (push record forward))
+           (list older newer empty) options)
+    (multiple-value-bind (incomplete-p count next)
+        (apply #'sexp-store:segments-map-reverse
+               (lambda (record) (push record reverse-records))
+               (list older newer empty) options)
+      (test-assert (and (not incomplete-p) (= count 4) (= next 5)
+                        (equal (nreverse reverse-records) forward))
+                   "reverse traversal preserves exact records, including multiline Unicode and empty segments"))
+    (tests--write-text newer "(:torn" :append t)
+    (test-assert
+     (equal (multiple-value-list
+             (apply #'sexp-store:segments-map-reverse #'identity
+                    (list older newer) options))
+            '(t 4 5))
+     "reverse traversal retains complete records and reports the active torn tail")
+    (test-assert
+     (equal (multiple-value-list
+             (apply #'sexp-store:segments-map-reverse #'identity nil options))
+            '(nil 0 nil))
+     "empty reverse traversal has no active sequence")
+    (test-assert
+     (eql (block found
+            (apply #'sexp-store:segments-map-reverse
+                   (lambda (record) (return-from found (record-property record ':seq)))
+                   (list missing newer) options))
+          4)
+     "early reverse exit never opens an older segment")
+    (let ((condition (make-condition 'store-error :pathname newer
+                                     :operation ':callback :message "Visitor failure.")))
+      (test-assert
+       (handler-case
+           (apply #'sexp-store:segments-map-reverse
+                  (lambda (record) (declare (ignore record)) (error condition))
+                  (list older newer) options)
+         (store-error (caught) (eq caught condition)))
+       "reverse visitor conditions propagate unchanged"))
+    (log-write older '((:log :version 1 :start 1) (:event :seq 1)))
+    (let ((visited nil))
+      (test-assert
+       (signals sexp-store:segment-error
+         (apply #'sexp-store:segments-map-reverse
+                (lambda (record) (push (record-property record ':seq) visited))
+                (list older newer) options))
+       "reverse traversal rejects an older segment boundary gap")
+      (test-assert (equal visited '(3 4))
+                   "an invalid older boundary is rejected before its records are visited"))
+    (dolist (forms '(nil ((:log :version 1 :start 1))
+                     ((:log :version 1 :start 1) (:event :seq 2))
+                     ((:log :version 1 :start 1) (:event :seq 1) (:event :seq 3))))
+      (log-write older forms)
+      (test-assert
+       (signals sexp-store:segment-error
+         (apply #'sexp-store:segment-map-reverse #'identity older options))
+       "reverse traversal validates headers, required first records and sequence gaps"))
+    (log-write older '((:log :version 1 :start 1) (:event :seq 1)))
+    (tests--write-text older "))" :append t)
+    (test-assert (signals store-error
+                   (apply #'sexp-store:segment-map-reverse #'identity older options))
+                 "reverse traversal rejects complete malformed suffixes")))
+
 (defun tests--segments (root)
   "Exercise ordered segment boundaries, torn tails, publication and recovery."
+  (tests--segments-reverse root)
   (let* ((first-path  (merge-pathnames "first.log" root))
          (second-path (merge-pathnames "second.log" root))
          (options     (list :header-function #'tests--segment-header

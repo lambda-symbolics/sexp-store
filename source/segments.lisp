@@ -98,6 +98,60 @@ record count, and next sequence. An empty pathname list returns NIL, zero, NIL."
               next segment-next)))
     (values incomplete-p count next)))
 
+(defun segment-map-reverse
+    (function pathname &rest options &key header-function record-sequence
+                                          validate-record validate-first-record
+                                          expected-start-sequence expected-next-sequence)
+  "Visit one validated segment's complete records newest first.
+
+OPTIONS use SEGMENT-MAP's callback contracts. EXPECTED-NEXT-SEQUENCE, when
+supplied, must equal the sequence immediately after the last complete record.
+Validate the whole segment and this boundary before calling FUNCTION. Buffer
+only this segment's records, never adjacent segments; readable records may
+contain multiline strings or transaction batches. Callback conditions and
+nonlocal exits propagate unchanged. Return SEGMENT-MAP's five values."
+  (declare (ignore header-function record-sequence validate-record
+                   validate-first-record expected-start-sequence))
+  (let ((records         nil)
+        (forward-options (copy-list options)))
+    (remf forward-options :expected-next-sequence)
+    (multiple-value-bind (position incomplete-p count start next)
+        (apply #'segment-map (lambda (record) (push record records))
+               pathname forward-options)
+      (when (and expected-next-sequence (/= next expected-next-sequence))
+        (segment--fail pathname "Segment boundaries are not contiguous." next))
+      (dolist (record records)
+        (funcall function record))
+      (values position incomplete-p count start next))))
+
+(defun segments-map-reverse
+    (function pathnames &rest options &key header-function record-sequence
+                                          validate-record validate-first-record)
+  "Visit chronological PATHNAMES in reverse record order, newest segment first.
+
+Use SEGMENT-MAP-REVERSE's callbacks and one-segment buffering. Validate each
+older segment's next sequence against the newer segment's start before yielding
+its records. A callback may exit without opening older segments. Return the
+active segment's incomplete-tail flag, total visited record count, and active
+next sequence, matching SEGMENTS-MAP. An empty list returns NIL, zero, NIL."
+  (declare (ignore header-function record-sequence validate-record
+                   validate-first-record))
+  (let ((incomplete-p nil)
+        (count        0)
+        (next         nil)
+        (boundary     nil))
+    (dolist (pathname (reverse pathnames))
+      (multiple-value-bind (position tail-p segment-count start segment-next)
+          (apply #'segment-map-reverse function pathname
+                 :expected-next-sequence boundary options)
+        (declare (ignore position))
+        (unless boundary
+          (setf incomplete-p tail-p
+                next         segment-next))
+        (incf count segment-count)
+        (setf boundary start)))
+    (values incomplete-p count next)))
+
 (defun segment--record-text (record)
   "Return RECORD's canonical readable representation for exact publication checks."
   (with-standard-io-syntax

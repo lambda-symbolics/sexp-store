@@ -12,7 +12,9 @@
            #:segment-error
            #:segment-error-sequence
            #:segment-map
+           #:segment-map-reverse
            #:segments-map
+           #:segments-map-reverse
            #:segment-published-p
            #:segment-publish
            #:file-revision

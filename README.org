@@ -185,6 +185,14 @@ errors. =segment-map= returns byte position, tail flag, record count, start
 sequence and next sequence. =segments-map= returns active tail flag, total count
 and next sequence. Callback conditions propagate unchanged.
 
+Use =segment-map-reverse= or =segments-map-reverse= to visit records newest
+first. Supply the same chronological pathname list and validation callbacks.
+Each visited segment is validated and buffered separately, then visited in
+reverse record order. A callback can return nonlocally without opening older
+segments. Reverse mapping retains one segment in memory, including records with
+multiline strings and transaction batches. Its return values match the forward
+mapper. =segment-map-reverse= also accepts =:expected-next-sequence= to check the
+boundary before visiting that segment's records.
 =segment-publish= atomically creates a header and first record. Supply
 =:lock-pathname= or hold an external writer lease. An optional zero-argument
 =:occupied-p= predicate includes related product storage in the occupancy check.
