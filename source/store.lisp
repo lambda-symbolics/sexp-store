@@ -314,8 +314,11 @@ when replacing an existing file. FORMS must be a finite proper list."
                        :mode           mode
                        :require-absent require-absent))
 
-(defun log-write-streaming (pathname producer &key (mode #o600) require-absent)
+(defun log-write-streaming (pathname producer &key (mode #o600) require-absent call-with-publication)
   "Atomically publish the readable forms PRODUCER emits at PATHNAME.
+CALL-WITH-PUBLICATION, when supplied, receives a zero-argument publisher after
+the temporary log is complete. Call it inside a short lock or validation scope;
+leaving nonlocally without calling it preserves the previous log.
 
 PRODUCER is called with one function, EMIT, which writes each form it receives
 to a private temporary file at once, so a log of any length is published
@@ -330,11 +333,13 @@ nothing and leaves PATHNAME unchanged."
      (store--set-mode temporary #o600)
      (store--write-with temporary producer)
      (store--set-mode temporary mode)
-     (if require-absent
-         (store--publish-exclusive temporary pathname)
-         (progn
-           (store--make-replaceable pathname)
-           (uiop:rename-file-overwriting-target temporary pathname))))
+     (funcall (or call-with-publication #'funcall)
+              (lambda ()
+                (if require-absent
+                    (store--publish-exclusive temporary pathname)
+                    (progn
+                      (store--make-replaceable pathname)
+                      (uiop:rename-file-overwriting-target temporary pathname))))))
    :want-stream-p nil
    :directory     (uiop:pathname-directory-pathname pathname)
    :prefix        (format nil ".~A." (or (pathname-name pathname) "state")))

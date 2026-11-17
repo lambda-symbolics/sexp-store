@@ -389,6 +389,25 @@
                  "tagged snapshot records support omitted version semantics"))
   nil)
 
+(defun tests--guarded-publication (root)
+  "Build outside a guard and commit or abandon inside the publication scope."
+  (let ((pathname (merge-pathnames "guarded.sexp" root)))
+    (log-write pathname '((:old)))
+    (log-write-streaming
+     pathname (lambda (emit) (funcall emit '(:new)))
+     :call-with-publication
+     (lambda (publish)
+       (test-assert (equal (log-read pathname) '((:old))) "the producer has not replaced the old log")
+       (funcall publish)
+       (test-assert (equal (log-read pathname) '((:new))) "the guard covers actual publication")))
+    (block cancelled
+      (log-write-streaming pathname (lambda (emit) (funcall emit '(:cancelled)))
+                           :call-with-publication (lambda (publish)
+                                                    (declare (ignore publish))
+                                                    (return-from cancelled))))
+    (test-assert (equal (log-read pathname) '((:new))) "abandoned publication leaves the complete previous log"))
+  nil)
+
 (defun run-tests ()
   "Run every sexp-store regression test."
   (setf *test-count* 0)
@@ -404,6 +423,7 @@
            (tests--snapshots root)
            (tests--raw-snapshots root)
            (tests--logs root)
+           (tests--guarded-publication root)
            (tests--records root)
            (tests--property-records)
            (tests--plist-schemas)
