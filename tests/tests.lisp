@@ -84,6 +84,20 @@
                   (> next-position position)
                   (equal tail '((:event :id 7))))
              "a returned position reads only subsequently appended forms")))))
+    (let ((pathname  (merge-pathnames "positions.sexp" root))
+          (positions nil))
+      (log-write pathname '((:event :text "žluťoučký λ") (:event :text "次")))
+      (log-map (lambda (form start end) (push (list form start end) positions))
+               pathname :with-positions-p t)
+      (dolist (entry positions)
+        (destructuring-bind (expected start end) entry
+          (test-assert (< start end) "record positions span the complete UTF-8 form")
+          (test-assert
+           (equal expected
+                  (block first-record
+                    (log-map (lambda (form) (return-from first-record form))
+                             pathname :start-position start)))
+           "every reported position can seek directly to its record"))))
     (tests--write-text pathname "(:event :id" :append t)
     (multiple-value-bind (forms incomplete-final-form-p)
         (log-read pathname)

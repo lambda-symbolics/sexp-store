@@ -81,8 +81,11 @@ MAXIMUM-OCTETS bounds that capture. Reader errors are wrapped in STORE-ERROR."
                    (format nil "Could not read a state snapshot: ~A" cause)
                    :cause cause))))
 
-(defun log-map (function pathname &key (start-position 0))
+(defun log-map (function pathname &key (start-position 0) with-positions-p)
   "Call FUNCTION for each complete form in PATHNAME from START-POSITION.
+With WITH-POSITIONS-P, pass the record, its enclosing top-level form's start
+and end seek positions. Batch records share those positions. These positions
+are suitable for sparse indexes and remain valid while the log only grows.
 
 Evaluation is disabled while forms are read. A transaction batch, the one
 top-level form a store transaction appends for several records, is visited as
@@ -160,9 +163,12 @@ at position zero."
                       (or (file-position stream) form-start)
                       nil
                       count)))
-                 (dolist (record (store--batch-records form pathname))
-                   (funcall function record)
-                   (incf count)))))
+                (let ((form-end (file-position stream)))
+                  (dolist (record (store--batch-records form pathname))
+                    (if with-positions-p
+                        (funcall function record form-start form-end)
+                        (funcall function record))
+                    (incf count))))))
       (close stream))))
 
 (defun store--batch-form (records)
