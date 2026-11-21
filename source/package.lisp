@@ -5,13 +5,16 @@
            #:plist-schema-p
            #:plist-schema-problem
            #:log-map
+           #:log-first
            #:log-read
            #:log-write
            #:log-write-streaming
+           #:log-transform
            #:log-repair-tail
            #:segment-error
            #:segment-error-sequence
            #:segment-map
+           #:segment-visit
            #:segment-map-reverse
            #:segments-map
            #:segments-map-reverse
@@ -23,6 +26,10 @@
            #:sidecar-read
            #:sidecar-write
            #:sidecar-rebuild
+           #:log-index-read
+           #:log-index-leaf
+           #:log-index-rebuild
+           #:log-index-note
            #:make-record
            #:publication-conflict
            #:record-check

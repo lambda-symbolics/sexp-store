@@ -185,6 +185,12 @@ errors. =segment-map= returns byte position, tail flag, record count, start
 sequence and next sequence. =segments-map= returns active tail flag, total count
 and next sequence. Callback conditions propagate unchanged.
 
+Use =segment-visit= to stop at a hard record limit or soft octet budget on an
+immutable segment. Save its returned seek position, next sequence and batch
+offset together. Pass those values back to resume without scanning earlier
+forms. A single form may exceed the octet budget. The status distinguishes
+=:stopped=, =:eof= and =:torn-tail=. Hold the lock that excludes replacement.
+
 Use =segment-map-reverse= or =segments-map-reverse= to visit records newest
 first. Supply the same chronological pathname list and validation callbacks.
 Each visited segment is validated and buffered separately, then visited in
@@ -206,6 +212,14 @@ backend, rejecting any occupied target entry, including dangling symlinks.
 Replacements use same-directory rename. Operations flush Lisp output and support
 process-crash recovery; power-loss persistence through filesystem synchronization
 barriers is outside this contract.
+
+=log-first= seeks to one record and returns it, its end position, and a status
+that distinguishes a record, clean EOF and a torn tail. Pass =:physical-forms-p=
+to it or =log-map= to read transaction envelopes intact. =log-transform= rewrites
+complete physical forms by atomic replacement, dropping only a torn final form.
+Return a replacement and a change flag from the transformer; unchanged same-path
+rewrites skip replacement. Use =:prepare-function= to set permissions or times
+on the staged replacement inside the publication scope.
 
 * Derived snapshots
 
@@ -229,6 +243,15 @@ cache hits need no lock. =sidecar-write= accepts a prebuilt value with =:encode=
 and the same token callbacks, declining stale publication. Hold the source lock
 from before constructing that value until publication completes, or build from
 an immutable committed snapshot with its matching token.
+
+For bounded pages of an append-only projection, use =log-index-rebuild= to
+explicitly publish fixed-size offset leaves followed by a manifest. Supply a
+source epoch extractor, record selector, and function mapping block numbers to
+leaf paths. Change the source epoch on replacement or a new selection policy.
+=log-index-note= extends the index after a durable append. =log-index-read=
+checks source epoch, byte length and tail without scanning the log;
+=log-index-leaf= validates a requested leaf before use. A lookup never rebuilds.
+Hold the source writer lock through these operations and through page reads.
 
 =file-revision= returns pathname, byte size and write date. Combine these with
 an explicit revision and source locking, since size and date cannot distinguish

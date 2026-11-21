@@ -81,7 +81,7 @@ MAXIMUM-OCTETS bounds that capture. Reader errors are wrapped in STORE-ERROR."
                    (format nil "Could not read a state snapshot: ~A" cause)
                    :cause cause))))
 
-(defun log-map (function pathname &key (start-position 0) with-positions-p)
+(defun log-map (function pathname &key (start-position 0) with-positions-p physical-forms-p)
   "Call FUNCTION for each complete form in PATHNAME from START-POSITION.
 With WITH-POSITIONS-P, pass the record, its enclosing top-level form's start
 and end seek positions. Batch records share those positions. These positions
@@ -90,6 +90,8 @@ are suitable for sparse indexes and remain valid while the log only grows.
 Evaluation is disabled while forms are read. A transaction batch, the one
 top-level form a store transaction appends for several records, is visited as
 its records in order, so a batch cut short by a crash shows none of them.
+With PHYSICAL-FORMS-P, each complete top-level form is delivered intact instead,
+including transaction envelopes.
 Return the position after the last complete top-level form, whether reading
 stopped inside an incomplete final form, and the number of forms visited. The
 returned position may be supplied to a later call after forms have only been
@@ -119,9 +121,10 @@ at position zero."
                (end-marker  (cons nil nil))
                (count       0))
            (handler-case
-               (unless (file-position stream start-position)
-                 (store--fail ':read pathname
-                              "START-POSITION is not valid for this log."))
+                (unless (and (<= start-position (file-length stream))
+                             (file-position stream start-position))
+                  (store--fail ':read pathname
+                               "START-POSITION is not valid for this log."))
              (store-error (condition)
                (error condition))
              (error (cause)
@@ -164,13 +167,26 @@ at position zero."
                       nil
                       count)))
                 (let ((form-end (file-position stream)))
-                  (dolist (record (store--batch-records form pathname))
+                   (dolist (record (if physical-forms-p
+                                       (list form)
+                                       (store--batch-records form pathname)))
                     (if with-positions-p
                         (funcall function record form-start form-end)
                         (funcall function record))
                     (incf count))))))
       (close stream))))
 
+(defun log-first (pathname &key (start-position 0) physical-forms-p)
+  "Return the first complete record, its end position, and :RECORD.
+On clean EOF or a torn tail return NIL, the terminal position, and :EOF or
+:TORN-TAIL. With PHYSICAL-FORMS-P return a transaction envelope intact."
+  (multiple-value-bind (position incomplete-p)
+      (log-map (lambda (record start end)
+                 (declare (ignore start))
+                 (return-from log-first (values record end ':record)))
+               pathname :start-position start-position :with-positions-p t
+                        :physical-forms-p physical-forms-p)
+    (values nil position (if incomplete-p ':torn-tail ':eof))))
 (defun store--batch-form (records)
   "Return the one top-level form that publishes RECORDS together."
   (list *store-batch-tag* :version 1 :records records))
@@ -297,7 +313,7 @@ renames replace any file its directory permits, so nothing is needed there."
   pathname
   pathname)
 
-(defun log-write (pathname forms &key (mode #o600) require-absent)
+(defun log-write (pathname forms &key (mode #o600) require-absent prepare-function)
   "Atomically publish complete readable FORMS at PATHNAME.
 
 When REQUIRE-ABSENT is true, publish through an atomic create-only hard link and
@@ -311,14 +327,18 @@ when replacing an existing file. FORMS must be a finite proper list."
                        (lambda (emit)
                          (dolist (form forms)
                            (funcall emit form)))
-                       :mode           mode
-                       :require-absent require-absent))
+                        :mode             mode
+                        :require-absent   require-absent
+                        :prepare-function prepare-function))
 
-(defun log-write-streaming (pathname producer &key (mode #o600) require-absent call-with-publication)
+(defun log-write-streaming (pathname producer &key (mode #o600) require-absent
+                                                   prepare-function call-with-publication)
   "Atomically publish the readable forms PRODUCER emits at PATHNAME.
 CALL-WITH-PUBLICATION, when supplied, receives a zero-argument publisher after
 the temporary log is complete. Call it inside a short lock or validation scope;
 leaving nonlocally without calling it preserves the previous log.
+PREPARE-FUNCTION, when supplied, receives the completed temporary pathname
+inside that publication scope, before the target is touched.
 
 PRODUCER is called with one function, EMIT, which writes each form it receives
 to a private temporary file at once, so a log of any length is published
@@ -335,6 +355,8 @@ nothing and leaves PATHNAME unchanged."
      (store--set-mode temporary mode)
      (funcall (or call-with-publication #'funcall)
               (lambda ()
+                 (when prepare-function
+                   (funcall prepare-function temporary))
                 (if require-absent
                     (store--publish-exclusive temporary pathname)
                     (progn
@@ -344,6 +366,33 @@ nothing and leaves PATHNAME unchanged."
    :directory     (uiop:pathname-directory-pathname pathname)
    :prefix        (format nil ".~A." (or (pathname-name pathname) "state")))
   pathname)
+
+(defun log-transform (source target function &key (mode #o600) prepare-function)
+  "Transform complete physical forms from SOURCE into TARGET by atomic replacement.
+FUNCTION receives one form and returns its replacement and a true second value
+if it changed. Return true if a form changed. Leave an unchanged same-path log
+untouched. Distinct targets are published even when no form changes. Ignore only
+an incomplete final form. Callers must serialize source and target modifications.
+PREPARE-FUNCTION has the contract of LOG-WRITE-STREAMING."
+  (unless (probe-file source)
+    (store--fail ':read source "The transform source does not exist."))
+  (let ((changed-p nil))
+    (with-standard-io-syntax
+      (log-write-streaming
+       target
+       (lambda (emit)
+         (log-map (lambda (form)
+                    (multiple-value-bind (replacement different-p) (funcall function form)
+                      (when different-p (setf changed-p t))
+                      (funcall emit replacement)))
+                  source :physical-forms-p t))
+       :mode mode
+       :prepare-function prepare-function
+       :call-with-publication
+       (lambda (publish)
+         (when (or changed-p (not (equal (pathname source) (pathname target))))
+           (funcall publish)))))
+    changed-p))
 
 (defun snapshot-write (pathname form &key (mode #o600) require-absent)
   "Atomically publish one readable FORM at PATHNAME."

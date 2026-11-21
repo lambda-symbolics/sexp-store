@@ -74,6 +74,90 @@ and next sequence. Headers are not passed to FUNCTION."
         (segment--fail pathname "A segment has no durable record." start))
       (values position incomplete-p count start next))))
 
+(defun segment-visit
+    (function pathname &key header-function record-sequence validate-record
+                            validate-first-record expected-start-sequence
+                            (start-position 0) next-sequence (batch-offset 0)
+                            maximum-records maximum-octets)
+  "Visit a bounded portion of an immutable segment, validating its actual header.
+
+Callbacks have the contracts of SEGMENT-MAP. Return seek position, next sequence,
+status (:STOPPED, :EOF or :TORN-TAIL), count and batch offset. To resume the same
+immutable segment, supply the returned position, sequence and offset together.
+The offset skips only already visited records in the first form at that position.
+MAXIMUM-RECORDS is a hard logical record limit. MAXIMUM-OCTETS is a soft budget
+checked at form boundaries after visiting at least one form. The caller must
+protect the segment from replacement between visits. No callback errors are caught."
+  (unless (and (typep start-position '(integer 0))
+               (typep batch-offset '(integer 0))
+               (or (null maximum-records) (typep maximum-records '(integer 1)))
+               (or (null maximum-octets) (typep maximum-octets '(integer 1))))
+    (segment--fail pathname "Invalid segment cursor or budget."))
+  (multiple-value-bind (header header-end)
+      (block read-header
+        (log-map (lambda (form begin end)
+                   (declare (ignore begin))
+                   (return-from read-header (values form end)))
+                 pathname :with-positions-p t :physical-forms-p t)
+        (segment--fail pathname "A segment has no complete header."))
+    (unless (record-finite-p header)
+      (segment--fail pathname "A segment contains non-finite header data."))
+    (multiple-value-bind (start allow-empty-p) (funcall header-function pathname header)
+      (unless (and (typep start '(integer 1))
+                   (or (null expected-start-sequence) (eql start expected-start-sequence)))
+        (segment--fail pathname "Invalid segment start sequence." start))
+      (let* ((begin    (if (zerop start-position) header-end start-position))
+             (next     (or next-sequence start))
+             (count    0)
+             (offset   batch-offset))
+        (unless (and (>= begin header-end)
+                     (typep next '(integer 1))
+                     (>= (- next offset) start)
+                     (if (zerop start-position)
+                         (and (= next start) (zerop offset))
+                         next-sequence))
+          (segment--fail pathname "Invalid segment resume position or sequence." next))
+        (multiple-value-bind (position incomplete-p)
+            (log-map
+             (lambda (form form-start form-end)
+               (let* ((records (store--batch-records form pathname))
+                      (index   0)
+                      (wanted  offset)
+                      (sequence (- next offset)))
+                 (when (and (plusp wanted) (>= wanted (length records)))
+                   (segment--fail pathname "Invalid segment batch offset." next))
+                 (dolist (record records)
+                   (unless (record-finite-p record)
+                     (segment--fail pathname "A segment contains non-finite record data."))
+                   (when validate-record
+                     (funcall validate-record pathname record))
+                   (unless (eql sequence (funcall record-sequence record))
+                     (segment--fail pathname "Segment sequences are not contiguous." sequence))
+                   (when (and (= sequence start) validate-first-record)
+                     (funcall validate-first-record pathname header record))
+                   (unless (< index wanted)
+                     (funcall function record)
+                     (incf next)
+                     (incf count)
+                     (when (and maximum-records (= count maximum-records))
+                       (if (= (1+ index) (length records))
+                           (return-from segment-visit (values form-end next ':stopped count 0))
+                           (return-from segment-visit
+                             (values form-start next ':stopped count (1+ index))))))
+                   (incf sequence)
+                   (incf index))
+                 (setf offset 0)
+                 (when (and maximum-octets (>= (- form-end begin) maximum-octets))
+                   (return-from segment-visit (values form-end next ':stopped count 0)))))
+             pathname
+             :start-position   begin
+             :with-positions-p t
+             :physical-forms-p t)
+          (when (plusp offset)
+            (segment--fail pathname "The resumed transaction batch is missing." next))
+          (when (and (= next start) (not allow-empty-p))
+            (segment--fail pathname "A segment has no durable record." start))
+          (values position next (if incomplete-p ':torn-tail ':eof) count 0))))))
 (defun segments-map
     (function pathnames &rest options &key header-function record-sequence
                                           validate-record validate-first-record)

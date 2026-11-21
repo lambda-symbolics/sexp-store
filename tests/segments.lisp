@@ -90,9 +90,54 @@
                    (apply #'sexp-store:segment-map-reverse #'identity older options))
                  "reverse traversal rejects complete malformed suffixes")))
 
+(defun tests--segment-visit (root)
+  "Exercise bounded progress and error handling at physical form boundaries."
+  (let ((path (merge-pathnames "bounded.log" root))
+        (options (list :header-function #'tests--segment-header
+                       :record-sequence #'tests--segment-sequence))
+        (seen nil))
+    (log-write path (list '(:log :version 1 :start 2)
+                          (sexp-store::store--batch-form
+                           (list (list :event :seq 2 :text (make-string 1024 :initial-element #\X))
+                                 '(:event :seq 3) '(:event :seq 4)))
+                          '(:event :seq 5)))
+    (flet ((visit (record) (push (tests--segment-sequence record) seen)))
+      (multiple-value-bind (position next status count offset)
+          (apply #'sexp-store:segment-visit #'visit path :maximum-records 2
+                 :maximum-octets 1 options)
+        (test-assert (and (eq status ':stopped) (= count 2) (= offset 2) (= next 4))
+                     "an oversized physical batch makes progress within the hard record limit")
+        (test-assert (signals sexp-store:segment-error
+                       (apply #'sexp-store:segment-visit #'visit path
+                              :start-position position :next-sequence 5 :batch-offset offset options))
+                     "resuming with the wrong next sequence fails")
+        (multiple-value-bind (position next status count offset)
+            (apply #'sexp-store:segment-visit #'visit path :start-position position
+                   :next-sequence next :batch-offset offset :maximum-octets 1 options)
+          (test-assert (and (eq status ':stopped) (= count 1) (zerop offset) (= next 5))
+                       "the byte budget stops after the resumed physical form")
+          (test-assert (eq ':eof (nth-value 2 (apply #'sexp-store:segment-visit #'visit path
+                                                    :start-position position :next-sequence next options)))
+                       "resume reaches ordinary EOF")
+          (test-assert (equal seen '(5 4 3 2)) "resumption neither loses nor repeats batch records")
+          (tests--write-text path "(:event" :append t)
+          (test-assert (eq ':torn-tail (nth-value 2 (apply #'sexp-store:segment-visit #'identity path
+                                                          :start-position position :next-sequence next options)))
+                       "a torn tail has a distinct status")
+          (tests--write-text path " ))" :append t)
+          (test-assert (signals store-error
+                         (apply #'sexp-store:segment-visit #'identity path
+                                :start-position position :next-sequence next options))
+                       "complete malformed input is not a torn tail"))))
+    (test-assert (eq ':escaped (catch 'visitor
+                                (apply #'sexp-store:segment-visit
+                                       (lambda (record) (declare (ignore record)) (throw 'visitor ':escaped))
+                                       path options)))
+                 "nonlocal callback exits propagate")))
 (defun tests--segments (root)
   "Exercise ordered segment boundaries, torn tails, publication and recovery."
   (tests--segments-reverse root)
+  (tests--segment-visit root)
   (let* ((first-path  (merge-pathnames "first.log" root))
          (second-path (merge-pathnames "second.log" root))
          (options     (list :header-function #'tests--segment-header
